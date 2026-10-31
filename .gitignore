@@ -1,0 +1,45 @@
+# Python environment
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Tool downloads and Hugging Face caches
+downloads/
+.cache/
+.huggingface/
+
+# Tokens, secrets, local state (the tool keeps these outside the repo anyway)
+.env
+.env.*
+*.token
+hf_token*
+token.txt
+settings.json
+config.json
+*.log
+
+# Model weights and data, in case something lands here by accident
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.h5
+*.msgpack
+*.pb
+*.tflite
+*.model
+*.npz
+*.npy
+*.parquet
+*.arrow
+
+# OS and editor
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/

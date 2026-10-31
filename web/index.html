@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ModelFetcher</title>
+<style>
+:root{
+  --bg:#f5f6fa; --card:#ffffff; --text:#151a24; --muted:#697086; --border:#e2e5ee; --field:#f7f8fb;
+  --accent:#4f46e5; --accent-text:#ffffff; --accent-soft:#eceeff; --ok:#15803d; --ok-soft:#e6f6ec; --warn:#b45309; --warn-soft:#fff4e0; --err:#dc2626;
+  --info-bg:#eef3ff; --info-border:#c9d6ff; --info-ink:#1e3a8a;
+  --shadow:0 1px 2px rgba(16,24,40,.05),0 6px 20px rgba(16,24,40,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0e1117; --card:#161a23; --text:#e8ebf2; --muted:#97a0b4; --border:#252b38; --field:#1b202b;
+    --accent:#8b91ff; --accent-text:#0b0d14; --accent-soft:#232852; --ok:#4ade80; --ok-soft:#12301f; --warn:#fbbf24; --warn-soft:#33270d; --err:#f87171;
+    --info-bg:#172036; --info-border:#2c3d6b; --info-ink:#bcd0ff; --shadow:none; }
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:880px;margin:0 auto;padding:20px 16px 80px}
+header{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.logo{width:36px;height:36px;border-radius:10px;background:var(--accent);color:var(--accent-text);display:grid;place-items:center;font-weight:700}
+header h1{font-size:18px;margin:0;flex:1}
+.pill{border:1px solid var(--border);background:var(--card);color:var(--muted);border-radius:999px;padding:6px 12px;font-size:13px;cursor:pointer}
+.pill.ok{color:var(--ok)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:14px;box-shadow:var(--shadow)}
+.step{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.step h2{font-size:16px;margin:0}
+.num{width:26px;height:26px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-weight:700;font-size:13px;flex:none}
+.btn{border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:10px;padding:9px 14px;font:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-text);font-weight:600}
+.btn.primary:disabled{opacity:.45;cursor:not-allowed}
+.btn.danger{color:var(--err)}
+.btn.small{padding:5px 10px;font-size:13px}
+.btn svg{width:17px;height:17px;flex:none}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+input[type=text],input[type=password]{width:100%;border:1px solid var(--border);background:var(--field);color:var(--text);border-radius:10px;padding:10px 12px;font:inherit;outline:none}
+input[type=text]:focus,input[type=password]:focus{border-color:var(--accent)}
+.inputrow{display:flex;gap:8px}
+.muted{color:var(--muted);font-size:13px}
+.path{font-family:ui-monospace,Consolas,monospace;font-size:14px;background:var(--field);border:1px dashed var(--border);border-radius:10px;padding:10px 12px;word-break:break-all}
+.path.empty{color:var(--muted);font-family:inherit}
+.tag{display:inline-block;font-family:system-ui,sans-serif;font-size:11.5px;font-weight:600;padding:1px 8px;border-radius:999px;margin-left:8px;vertical-align:1px;background:var(--ok-soft);color:var(--ok)}
+.tag.neutral{background:var(--accent-soft);color:var(--accent)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
+.chip{border:1px solid var(--border);background:var(--field);color:var(--text);border-radius:999px;padding:3px 10px;font-size:12.5px;cursor:pointer}
+.chip:hover{border-color:var(--accent);color:var(--accent)}
+.chip small{color:var(--muted);margin-left:4px}
+.msg{margin-top:12px;padding:10px 12px;border-radius:10px;font-size:14px;background:var(--field);border:1px solid var(--border)}
+.msg.err{border-color:var(--err);color:var(--err)}
+.msg.warn{border-color:var(--warn)}
+
+/* info boxes */
+.info{display:flex;gap:10px;margin-top:12px;padding:11px 13px;border-radius:10px;background:var(--info-bg);border:1px solid var(--info-border);color:var(--info-ink);font-size:13.5px;line-height:1.5}
+.info .ico{flex:none;width:20px;height:20px;border-radius:50%;background:var(--info-ink);color:var(--info-bg);display:grid;place-items:center;font-weight:700;font-size:13px;font-family:Georgia,serif;font-style:italic;margin-top:1px}
+.info b{display:block;margin-bottom:2px}
+.info p{margin:4px 0 0}
+.info ul{margin:4px 0 0;padding-left:18px}
+.info code,.codebox{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:rgba(127,127,127,.15);padding:1px 5px;border-radius:5px}
+.info.ok{background:var(--ok-soft);border-color:var(--ok);color:var(--text)}
+.info.ok .ico{background:var(--ok);color:var(--card)}
+.info.warn{background:var(--warn-soft);border-color:var(--warn);color:var(--text)}
+.info.warn .ico{background:var(--warn);color:var(--card)}
+.info a{color:inherit;font-weight:600}
+details.guide{margin-bottom:14px}
+details.guide summary{cursor:pointer;font-weight:600;color:var(--accent);list-style:none;display:flex;gap:8px;align-items:center}
+details.guide summary::-webkit-details-marker{display:none}
+details.guide summary::before{content:"?";width:20px;height:20px;border-radius:50%;background:var(--accent);color:var(--accent-text);display:grid;place-items:center;font-size:12px}
+details.guide .info{margin-top:10px}
+
+.repohead{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;margin-bottom:10px}
+.repohead b{font-size:17px;word-break:break-all}
+.badge{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+.badge.warn{background:transparent;border:1px solid var(--warn);color:var(--warn)}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.toolbar input{flex:1;min-width:200px}
+
+/* quick picks */
+.picks{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-top:12px}
+.pick{border:2px solid var(--border);background:var(--field);color:var(--text);border-radius:12px;padding:10px 12px;text-align:left;font:inherit;cursor:pointer}
+.pick:hover{border-color:var(--accent)}
+.pick.active{border-color:var(--accent);background:var(--accent-soft)}
+.pick b{display:block;font-size:14px}
+.pick .q{font-family:ui-monospace,Consolas,monospace;font-size:13px;color:var(--accent)}
+.pick .s{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+
+.files{margin-top:10px;max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:10px}
+.frow{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);cursor:pointer}
+.frow:last-child{border-bottom:0}
+.frow:hover{background:var(--field)}
+.frow.dup{opacity:.7}
+.fmain{flex:1;min-width:0}
+.fn{word-break:break-all;font-family:ui-monospace,Consolas,monospace;font-size:13px}
+.fn i{color:var(--muted);font-style:normal}
+.fd{display:block;color:var(--muted);font-size:12.5px;margin-top:1px}
+.fs{color:var(--muted);font-size:13px;white-space:nowrap}
+.fp{font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap;background:var(--field);color:var(--muted);border:1px solid var(--border)}
+.fp.need{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.fp.rec{background:var(--ok-soft);color:var(--ok);border-color:transparent}
+.fp.dup{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.empty{padding:16px;text-align:center;color:var(--muted)}
+.bar{position:sticky;bottom:0;margin:14px -18px -18px;padding:14px 18px;border-top:1px solid var(--border);background:var(--card);border-radius:0 0 14px 14px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.bar .grow{flex:1;min-width:220px}
+.bar .big{font-size:16px;font-weight:600}
+.bar label{display:flex;gap:6px;align-items:flex-start}
+.bar .where{word-break:break-all}
+.bar .where b{font-family:ui-monospace,Consolas,monospace;font-weight:500;color:var(--text)}
+.sumwarn{color:var(--warn);font-size:13px}
+.job{border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:10px}
+.job .top{display:flex;gap:8px;align-items:center}
+.job .top b{flex:1;word-break:break-all}
+.track{height:8px;background:var(--field);border:1px solid var(--border);border-radius:999px;margin:10px 0 6px;overflow:hidden}
+.fill{height:100%;background:var(--accent);transition:width .4s}
+.fill.done{background:var(--ok)}
+.fill.bad{background:var(--err)}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;z-index:9}
+dialog{border:1px solid var(--border);border-radius:14px;background:var(--card);color:var(--text);padding:20px;width:min(520px,92vw)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+dialog h2{margin:0 0 4px;font-size:17px}
+dialog hr{border:0;border-top:1px solid var(--border);margin:16px 0}
+.switch{display:flex;gap:10px;align-items:flex-start}
+a{color:var(--accent)}
+
+/* destination option buttons */
+.btn{white-space:nowrap}
+.opt{border-width:2px;position:relative}
+.opt .inuse{display:none;align-items:center;gap:4px;font-size:11.5px;font-weight:700;background:var(--accent);color:var(--accent-text);border-radius:999px;padding:1px 8px 1px 6px}
+.opt .inuse svg{width:12px;height:12px}
+.opt.active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:600}
+.opt.active .inuse{display:inline-flex}
+.path.active{border-style:solid;border-color:var(--accent)}
+
+/* look-up icon button */
+.iconbtn{flex:none;width:46px;padding:0;justify-content:center}
+.iconbtn svg{width:22px;height:22px}
+.iconbtn .spin{display:none;animation:rot .8s linear infinite}
+.iconbtn.busy .spin{display:block}
+.iconbtn.busy .mag{display:none}
+@keyframes rot{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">MF</div>
+    <h1>ModelFetcher</h1>
+    <button class="pill" id="tokenPill">Loading...</button>
+    <button class="btn small" id="btnSettings">Settings</button>
+    <button class="btn small" id="btnQuit">Quit</button>
+  </header>
+
+  <details class="guide">
+    <summary>New here? What is this and what do I pick?</summary>
+    <div class="info"><span class="ico">i</span><div>
+      <b>ModelFetcher downloads AI models from Hugging Face and Civitai to your PC.</b>
+      <p>Four steps: choose a folder, paste a model name, check the files we selected for you, press Download.</p>
+      <p>Models come in two common shapes, and the tool tells you which one you have:</p>
+      <ul>
+        <li><b style="display:inline">GGUF</b> (name usually ends in <code>-GGUF</code>): many files that are all the <i>same</i> model in different sizes. You pick <b style="display:inline">one</b>. For LM Studio, Ollama, llama.cpp, KoboldCpp.</li>
+        <li><b style="display:inline">Standard / safetensors</b> (for example <code>Qwen/Qwen2.5-0.5B-Instruct</code>): a set of files that belong together. You download <b style="display:inline">all</b> of them. For Python (<code>transformers</code>) and similar tools.</li>
+        <li><b style="display:inline">Civitai</b> (image models: checkpoints, LoRAs, embeddings): usually one main file, which is pre-selected. For ComfyUI, Forge, A1111 and similar.</li>
+      </ul>
+      <p>Not sure? Just leave the pre-selected files ticked. They are the sensible default.</p>
+    </div></div>
+  </details>
+
+  <section class="card" id="cardDest">
+    <div class="step"><span class="num">1</span><h2>Where should the files go? <span class="tag" id="destTag" hidden></span></h2></div>
+    <div class="path empty" id="destPath">Loading...</div>
+    <div class="muted" id="destFree" style="margin-top:6px"></div>
+    <div class="btns opts" role="radiogroup" aria-label="Destination folder method">
+      <button class="btn opt" id="btnBrowse" data-m="browse" role="radio"><span>Choose folder...</span><span class="inuse"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg>In use</span></button>
+      <button class="btn opt" id="btnSafe" data-m="safe" role="radio"><span>Use this tool's downloads folder</span><span class="inuse"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg>In use</span></button>
+      <button class="btn opt" id="btnType" data-m="type" role="radio"><span>Type a path</span><span class="inuse"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg>In use</span></button>
+    </div>
+    <div class="inputrow" id="pathEdit" hidden style="margin-top:10px">
+      <input type="text" id="pathInput" placeholder="D:\models" spellcheck="false">
+      <button class="btn primary" id="btnPathSet">Use it</button>
+    </div>
+    <div class="chips" id="recent"></div>
+    <div class="info"><span class="ico">i</span><div>
+      Pick any folder with enough free space (models are often several GB). Each model gets its <b style="display:inline">own subfolder</b> inside it, so files from different models never get mixed up. Your choice is remembered next time.
+    </div></div>
+  </section>
+
+  <section class="card" id="cardModel">
+    <div class="step"><span class="num">2</span><h2>Which model?</h2></div>
+    <div class="inputrow">
+      <input type="text" id="q" placeholder="Paste a Hugging Face or Civitai link" autocomplete="off" spellcheck="false">
+      <button class="btn primary iconbtn" id="btnLookup" title="Look up this model" aria-label="Look up this model">
+        <svg class="mag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>
+        <svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9" /></svg>
+      </button>
+    </div>
+    <div class="chips"><span class="muted">Try:</span>
+      <button class="chip ex" data-n="Qwen/Qwen2.5-0.5B-Instruct">Qwen/Qwen2.5-0.5B-Instruct<small>(for Python)</small></button>
+      <button class="chip ex" data-n="TheBloke/Mistral-7B-Instruct-v0.2-GGUF">TheBloke/Mistral-7B-Instruct-v0.2-GGUF<small>(for LM Studio / Ollama)</small></button>
+      <button class="chip ex" data-n="https://civitai.com/models/3006599/moss-image-turbo-loras">civitai.com/models/3006599<small>(Civitai LoRA)</small></button>
+    </div>
+    <div class="info"><span class="ico">i</span><div>
+      Open the model's page on <a href="https://huggingface.co/models" target="_blank" rel="noopener">Hugging Face</a> or <a href="https://civitai.com/models" target="_blank" rel="noopener">Civitai</a> and copy the address from your browser bar. Paste it here and the lookup starts by itself (or press the magnifier / Enter). The site is detected automatically. On Hugging Face you can also type the short form <code>user/model-name</code>.
+    </div></div>
+    <div id="msg"></div>
+  </section>
+
+  <section class="card" id="cardFiles" hidden>
+    <div class="step"><span class="num">3</span><h2>Check the files</h2></div>
+    <div class="repohead" id="repoHead"></div>
+    <div id="kindInfo"></div>
+    <div class="picks" id="picks" hidden></div>
+    <div class="toolbar">
+      <input type="text" id="filter" placeholder="Filter the list (example: Q4_K_M or *.safetensors)" spellcheck="false">
+      <button class="btn" id="btnRec" title="Go back to the files we pre-selected for you">Recommended</button>
+      <button class="btn" id="btnSelShown">Select shown</button>
+      <button class="btn" id="btnSelNone">Clear</button>
+    </div>
+    <div class="chips" id="tagChips"></div>
+    <div class="files" id="files"></div>
+    <div class="bar">
+      <div class="grow">
+        <div class="big" id="sumLine">Nothing selected</div>
+        <label class="muted"><input type="checkbox" id="sub" checked> <span>Save in its own subfolder named <b id="subName"></b> (recommended)</span></label>
+        <div class="muted where" id="where"></div>
+        <div class="sumwarn" id="sumWarn"></div>
+      </div>
+      <button class="btn primary" id="btnDownload" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 20h16"/></svg>
+        Download
+      </button>
+    </div>
+  </section>
+
+  <section class="card" id="cardJobs" hidden>
+    <div class="step"><span class="num">4</span><h2>Downloads</h2></div>
+    <div class="info"><span class="ico">i</span><div>
+      You can leave this page open and keep working. Cancelled or interrupted? Start the same download again and it continues where it stopped.
+    </div></div>
+    <div id="jobs"></div>
+  </section>
+</div>
+
+<dialog id="dlg">
+  <h2>Settings</h2>
+  <div class="muted" id="tokenState"></div>
+  <p class="muted" style="margin:10px 0">A token is optional. It is needed for gated models (Llama, Gemma and others) and gives higher rate limits. Create one with "Read" access.</p>
+  <input type="password" id="tokenInput" placeholder="Paste token (hf_...)" autocomplete="off">
+  <div class="btns">
+    <a class="btn" href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener" style="text-decoration:none">Get a token</a>
+    <button class="btn primary" id="btnTokenSave">Save token</button>
+    <button class="btn danger" id="btnTokenRemove">Remove token</button>
+  </div>
+  <hr>
+  <b>Civitai API key</b> <span class="muted" id="civState"></span>
+  <p class="muted" style="margin:6px 0 10px">Optional. Needed for some Civitai files (login-only, early access, some restricted models). Create one under "API Keys" at the bottom of your <a href="https://civitai.com/user/account" target="_blank" rel="noopener">Civitai account page</a>.</p>
+  <input type="password" id="civInput" placeholder="Paste Civitai API key" autocomplete="off">
+  <div class="btns">
+    <button class="btn primary" id="btnCivSave">Save key</button>
+    <button class="btn danger" id="btnCivRemove">Remove key</button>
+  </div>
+  <hr>
+  <label class="switch"><input type="checkbox" id="perf">
+    <span>High performance mode<br><span class="muted">Faster downloads on fast connections. Uses more CPU and bandwidth. Applies to the next download.</span></span></label>
+  <hr>
+  <p class="muted" style="margin:0">Your tokens, keys and settings are stored in your user profile (<span id="settingsFile"></span>), never in this tool's repo folder.</p>
+  <div class="btns" style="justify-content:flex-end"><button class="btn" id="btnClose">Close</button></div>
+</dialog>
+
+<script>
+const SESSION = "__SESSION__";
+const $ = s => document.querySelector(s);
+let S = {}, repo = null, selected = new Set(), pendingRetry = false;
+const jobKinds = {};
+
+async function api(name, body) {
+  const r = await fetch("/api/" + name, {
+    method: body === undefined ? "GET" : "POST",
+    headers: {"X-Session": SESSION, "Content-Type": "application/json"},
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function fmt(n) {
+  if (!n) return "0 B";
+  const u = ["B","KB","MB","GB","TB"]; let i = 0;
+  while (n >= 1024 && i < 4) { n /= 1024; i++; }
+  return (i === 0 ? n.toFixed(0) : n.toFixed(n >= 100 ? 0 : 1)) + " " + u[i];
+}
+function fmtEta(s) {
+  if (s == null) return "";
+  if (s < 60) return s + "s left";
+  if (s < 3600) return Math.round(s / 60) + " min left";
+  return (s / 3600).toFixed(1) + " h left";
+}
+let toastTimer;
+function toast(m) {
+  document.querySelectorAll(".toast").forEach(e => e.remove());
+  const t = document.createElement("div"); t.className = "toast"; t.textContent = m;
+  document.body.appendChild(t); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.remove(), 3000);
+}
+function setMsg(html, kind) { $("#msg").innerHTML = html ? `<div class="msg ${kind || ""}">${html}</div>` : ""; }
+function info(title, body, kind) {
+  return `<div class="info ${kind || ""}"><span class="ico">i</span><div><b>${title}</b>${body}</div></div>`;
+}
+
+/* ---------- state, destination, token ---------- */
+async function loadState() {
+  S = await api("state");
+  const p = $("#destPath");
+  p.textContent = S.dest || "No folder available. Choose one below.";
+  p.classList.toggle("empty", !S.dest);
+  const tag = $("#destTag");
+  tag.hidden = !S.dest;
+  const m = S.dest_method === "recent" ? "browse" : S.dest_method;
+  tag.className = "tag" + (S.dest_source === "remembered" ? "" : " neutral");
+  tag.textContent = S.dest_source !== "remembered" ? "default, change it if you like"
+    : (m === "safe" ? "tool's downloads folder" : m === "type" ? "path you typed" : "folder you chose") + " (remembered)";
+  p.classList.toggle("active", !!S.dest);
+  document.querySelectorAll(".opt").forEach(b => {
+    const on = !!S.dest && b.dataset.m === m;
+    b.classList.toggle("active", on); b.setAttribute("aria-checked", on);
+  });
+  if (m === "type" && S.dest && $("#pathEdit").hidden) { $("#pathEdit").hidden = false; $("#pathInput").value = S.dest; }
+  $("#destFree").textContent = S.dest && S.free != null ? fmt(S.free) + " free on this drive" : "";
+  const others = (S.recent || []).filter(r => r !== S.dest);
+  $("#recent").innerHTML = others.length
+    ? '<span class="muted">Recent:</span>' + others.map(r => `<button class="chip rc" data-p="${esc(r)}">${esc(r)}</button>`).join("")
+    : "";
+  const pill = $("#tokenPill");
+  pill.textContent = S.token ? (S.user ? "Signed in as " + S.user : "Token set (..." + S.token_tail + ")") : "No token (optional)";
+  pill.classList.toggle("ok", S.token);
+  $("#tokenState").textContent = S.token ? "Token is set" + (S.user ? " for " + S.user : "") + " (ends with ..." + S.token_tail + ")." : "No token is set.";
+  $("#civState").textContent = S.civitai_key ? "(set, ends with ..." + S.civitai_key_tail + ")" : "(not set)";
+  $("#perf").checked = S.high_performance;
+  $("#settingsFile").textContent = S.settings_file;
+  renderSummary();
+}
+async function setDest(path, method) {
+  try { S = await api("set_dest", {path, method}); toast("Folder saved. It will be remembered."); await loadState(); }
+  catch (e) { toast(e.message); }
+}
+$("#btnBrowse").onclick = async () => {
+  $("#btnBrowse").disabled = true;
+  try { const r = await api("browse", {}); if (r.path) await setDest(r.path, "browse"); }
+  catch (e) { toast(e.message); $("#pathEdit").hidden = false; }
+  $("#btnBrowse").disabled = false;
+};
+$("#btnSafe").onclick = () => setDest(S.safe_downloads, "safe");
+$("#btnType").onclick = () => { $("#pathEdit").hidden = !$("#pathEdit").hidden; if (!$("#pathEdit").hidden) $("#pathInput").focus(); };
+$("#btnPathSet").onclick = () => setDest($("#pathInput").value, "type");
+$("#pathInput").onkeydown = e => { if (e.key === "Enter") setDest(e.target.value, "type"); };
+$("#recent").onclick = e => { if (e.target.dataset.p) setDest(e.target.dataset.p, "recent"); };
+
+/* ---------- file knowledge ---------- */
+const QUANT_RE = /(?:^|[^A-Za-z0-9])((?:IQ\d_[A-Z]+|Q\d_K_[SML]|Q\d_K|Q\d_[01]|BF16|F16|F32))(?=[^A-Za-z0-9]|$)/i;
+function quantOf(name) { const m = name.split("/").pop().match(QUANT_RE); return m ? m[1].toUpperCase() : null; }
+function quantInfo(q) {
+  if (q === "Q4_K_M") return {pill: "Recommended", cls: "rec", desc: "Best balance of quality, size and speed. The standard choice."};
+  if (/^(IQ1|IQ2|Q2)/.test(q)) return {pill: "Smallest", cls: "", desc: "Tiny and fast, but noticeably lower quality. Only if you are short on memory."};
+  if (/^(IQ3|Q3)/.test(q)) return {pill: "Small", cls: "", desc: "Small file with some quality loss."};
+  if (/^(IQ4|Q4)/.test(q)) return {pill: "Good", cls: "", desc: "4-bit. Close to Q4_K_M; the older Q4_0 / Q4_1 styles are slightly worse for the same size."};
+  if (/^Q5/.test(q)) return {pill: "High quality", cls: "", desc: "Better quality than Q4, about 20% bigger. Good if you have spare memory."};
+  if (/^Q6/.test(q)) return {pill: "Very high", cls: "", desc: "Close to the original quality. Bigger and slower."};
+  if (/^Q8/.test(q)) return {pill: "Near original", cls: "", desc: "Almost identical to the original, roughly double the size of Q4."};
+  if (/^(F16|BF16|F32)/.test(q)) return {pill: "Original", cls: "", desc: "Uncompressed original precision. Huge; rarely needed just to run the model."};
+  return {pill: "", cls: "", desc: "A compressed version of the model."};
+}
+function detectKind(files, type, source) {
+  if (source === "civitai") return "civitai";
+  const has = re => files.some(f => re.test(f.name));
+  if (has(/\.gguf$/i)) return "gguf";
+  if (type === "dataset") return "dataset";
+  if (type === "space") return "space";
+  if (has(/\.safetensors$/i)) return "transformers";
+  if (has(/\.onnx$/i)) return "onnx";
+  if (has(/\.(bin|pt|pth|ckpt|h5|msgpack)$/i)) return "weights";
+  return "generic";
+}
+function fileInfo(f) {
+  const n = f.name, b = n.split("/").pop().toLowerCase();
+  if (repo.source === "civitai") {
+    const t = (f.type || "").toLowerCase();
+    let desc = [f.type, f.format, f.model_size, f.fp].filter(Boolean).join(" · ");
+    if (/pickle/i.test(f.format || "") || /\.(ckpt|pt|pth)$/.test(b)) desc += ". Older format that can contain code. Prefer a SafeTensor file when there is one.";
+    if (t === "training data") desc = "Images used to train the model. Not needed to use it.";
+    else if (t === "config") desc = "Config file for the model.";
+    else if (t === "vae") desc += " (goes in the vae folder)";
+    return {role: f.primary ? "need" : "opt", pill: f.primary ? "Main file" : (t === "model" ? "" : (f.type || "Extra")), cls: f.primary ? "rec" : "", desc};
+  }
+  const hasST = repo.files.some(x => /\.safetensors$/i.test(x.name));
+  if (/\.gguf$/.test(b)) {
+    if (b.includes("mmproj")) return {role: "opt", pill: "Vision add-on", desc: "Only needed if the model should understand images. Used together with the main model file."};
+    const q = quantOf(n);
+    if (q) { const qi = quantInfo(q); return {role: "gguf", pill: qi.pill, cls: qi.cls, desc: `${q}: ${qi.desc}`}; }
+    return {role: "gguf", pill: "", desc: "Model file. Use this one."};
+  }
+  if (/\.safetensors$/.test(b)) return {role: "need", pill: "Needed", desc: /-\d+-of-\d+/.test(b) ? "One piece of the model weights. You need all pieces." : "The model weights, the AI itself (the big file)."};
+  if (/\.safetensors\.index\.json$/.test(b)) return {role: "need", pill: "Needed", desc: "Tells the software which weight piece holds what."};
+  if (/^(config|generation_config|preprocessor_config|processor_config|tokenizer_config)\.json$/.test(b)) return {role: "need", pill: "Needed", desc: "Model settings."};
+  if (/^(tokenizer|vocab|merges|special_tokens_map|added_tokens|chat_template|tekken)/.test(b) || /^tokenizer\.model$/.test(b) || /\.tiktoken$/.test(b)) return {role: "need", pill: "Needed", desc: "Tokenizer: turns text into numbers the model understands."};
+  if (hasST && (/\.(bin|pt|pth|ckpt|h5|msgpack|ot|onnx|onnx_data|tflite|mlmodel)$/.test(b) || /^(onnx|openvino|coreml|flax|tf)\//i.test(n)))
+    return {role: "dup", pill: "Duplicate", cls: "dup", desc: "Same weights in another format. Not needed when you have the .safetensors."};
+  if (/\.(bin|pt|pth|ckpt|h5|msgpack|onnx|onnx_data)$/.test(b)) return {role: "need", pill: "Weights", desc: "Model weights."};
+  if (/^readme/.test(b)) return {role: "opt", pill: "Optional", desc: "Description page. Not needed to run the model."};
+  if (/^(license|notice|use_policy)/.test(b)) return {role: "opt", pill: "Optional", desc: "License text."};
+  if (b === ".gitattributes") return {role: "opt", pill: "Optional", desc: "Git housekeeping. Not needed."};
+  if (/\.(png|jpe?g|gif|webp|svg)$/.test(b)) return {role: "opt", pill: "Optional", desc: "Picture for the model page."};
+  return {role: "opt", pill: "Optional", desc: ""};
+}
+function quantGroups() {
+  const g = {};
+  repo.files.forEach(f => {
+    if (!/\.gguf$/i.test(f.name) || /mmproj/i.test(f.name)) return;
+    const q = quantOf(f.name) || f.name;
+    (g[q] = g[q] || []).push(f);
+  });
+  return g;
+}
+function defaultSelection() {
+  const sel = new Set();
+  if (repo.kind === "civitai") {
+    const f = repo.files.find(x => x.id === repo.selected_file_id) || repo.files.find(x => x.primary) || repo.files[0];
+    if (f) sel.add(f.name);
+    return sel;
+  }
+  if (repo.kind === "gguf") {
+    const g = quantGroups();
+    const order = ["Q4_K_M", "Q4_K_S", "Q5_K_M", "Q4_0", "Q3_K_M", "Q5_K_S", "Q6_K", "Q8_0"];
+    let key = order.find(q => g[q]);
+    if (!key) { // pick the smallest group
+      key = Object.keys(g).sort((a, b) => g[a].reduce((s, f) => s + f.size, 0) - g[b].reduce((s, f) => s + f.size, 0))[0];
+    }
+    if (key) g[key].forEach(f => sel.add(f.name));
+    return sel;
+  }
+  repo.files.forEach(f => { if (fileInfo(f).role !== "dup") sel.add(f.name); });
+  return sel;
+}
+
+/* ---------- lookup ---------- */
+function setBusy(b) { $("#btnLookup").disabled = b; $("#btnLookup").classList.toggle("busy", b); }
+async function lookup(versionId) {
+  const q = $("#q").value.trim(); if (!q) return;
+  if (typeof versionId !== "number") versionId = undefined;
+  setBusy(true); setMsg("Looking up...", ""); $("#cardFiles").hidden = true; repo = null; pendingRetry = false;
+  let r;
+  try { r = await api("inspect", {query: q, version_id: versionId}); }
+  catch (e) { setMsg(esc(e.message), "err"); setBusy(false); return; }
+  setBusy(false);
+  if (!r.ok) {
+    if (r.kind === "auth") {
+      pendingRetry = true;
+      if (r.source === "civitai") {
+        setMsg(esc(r.message) + ` <a href="${esc(r.url)}" target="_blank" rel="noopener">Open the model page</a> <button class="btn small" id="msgSettings">Open settings</button>`, "warn");
+        $("#msgSettings").onclick = () => $("#dlg").showModal();
+        return;
+      }
+      setMsg(esc(r.message) + (r.has_token
+        ? ` Your token has no access. Accept the license on <a href="${esc(r.url)}" target="_blank" rel="noopener">the model page</a>, then look it up again.`
+        : ` If it is gated, accept the license on <a href="${esc(r.url)}" target="_blank" rel="noopener">the model page</a> and add a token. <button class="btn small" id="msgSettings">Open settings</button>`), "warn");
+      const b = $("#msgSettings"); if (b) b.onclick = () => $("#dlg").showModal();
+    } else setMsg(esc(r.message), "err");
+    return;
+  }
+  repo = r; repo.kind = detectKind(r.files, r.repo_type, r.source);
+  if (repo.kind === "gguf") repo.files.sort((a, b) => a.size - b.size || a.name.localeCompare(b.name));
+  $("#filter").value = "";
+  const wanted = r.filename && r.files.find(f => f.name === r.filename || f.name.split("/").pop().toLowerCase() === r.filename.toLowerCase());
+  selected = wanted ? new Set([wanted.name]) : defaultSelection();
+  $("#sub").checked = true;
+  setMsg(r.filename && !wanted ? "That file was not found in the repo. Pick from the list below." : "", "warn");
+  renderRepo(); renderFiles(); $("#cardFiles").hidden = false;
+  $("#cardFiles").scrollIntoView({behavior: "smooth", block: "start"});
+}
+$("#btnLookup").onclick = () => lookup();
+$("#q").onkeydown = e => { if (e.key === "Enter") lookup(); };
+$("#q").onpaste = () => setTimeout(() => lookup(), 60);
+$("#kindInfo").onchange = e => { if (e.target.id === "verSel") lookup(+e.target.value); };
+document.querySelectorAll(".ex").forEach(b => b.onclick = () => { $("#q").value = b.dataset.n; lookup(); });
+
+/* ---------- files ---------- */
+function matcher(t) {
+  t = t.trim().toLowerCase(); if (!t) return () => true;
+  if (/[*?]/.test(t)) {
+    const re = new RegExp("^" + t.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".") + "$");
+    return n => re.test(n.toLowerCase()) || re.test(n.split("/").pop().toLowerCase());
+  }
+  return n => n.toLowerCase().includes(t);
+}
+const KIND_TEXT = {
+  gguf: () => info("GGUF repo: you only need ONE file",
+    `<p>Every <code>.gguf</code> file below is the <b style="display:inline">same model</b>, just compressed to a different size. Download one, not all of them. Use it in <b style="display:inline">LM Studio, Ollama, llama.cpp or KoboldCpp</b>.</p>
+     <ul>
+       <li><b style="display:inline">Which one?</b> The biggest that fits in your RAM / graphics memory (roughly the file size plus 1 to 2 GB). Not sure? Take <code>Q4_K_M</code>. It is pre-selected.</li>
+       <li><b style="display:inline">Reading the names:</b> the number after <code>Q</code> is bits per weight (higher = better quality, bigger file). <code>K</code> is the modern compression method. <code>S</code> / <code>M</code> / <code>L</code> = small / medium / large variant. <code>IQ</code> is a special very-small style.</li>
+       <li>Files marked "Vision add-on" (<code>mmproj</code>) are only for image input and are optional.</li>
+       <li>A file name ending in <code>-00001-of-0000N</code> is split into parts. Tick all parts.</li>
+     </ul>`),
+  transformers: () => info("Standard model (safetensors): download everything",
+    `<p>These files only work <b style="display:inline">together</b>: the weights (<code>.safetensors</code>, the big file), the settings (<code>config.json</code>) and the tokenizer files. The weights alone are not enough. We ticked everything you need and left out duplicate formats.</p>
+     <p>Use it from Python: <code>AutoModelForCausalLM.from_pretrained("&lt;the folder&gt;")</code>. Want to run it in <b style="display:inline">LM Studio or Ollama</b> instead? Those need a GGUF version: <a href="https://huggingface.co/models?search=${encodeURIComponent(repo.repo_id.split("/").pop() + " GGUF")}" target="_blank" rel="noopener">search for a GGUF version</a>.</p>`),
+  onnx: () => info("ONNX model", `<p>ONNX files run in ONNX Runtime. Keep the model file together with its <code>.json</code> config files. If the repo has several versions (for example <code>fp16</code>, <code>int8</code>, <code>q4</code>), tick just the one you want plus the config files.</p>`),
+  weights: () => info("Model weights (older format)", `<p>This repo uses older weight files (<code>.bin</code>, <code>.pt</code> and similar). Keep them together with the <code>.json</code> config files. Everything is ticked by default.</p>`),
+  dataset: () => info("Dataset", `<p>Datasets are collections of data files (often <code>.parquet</code> or <code>.json</code>). Everything is ticked. They can be huge; if you only need part of it, use the filter (for example <code>train</code>) and press "Select shown" after "Clear".</p>`),
+  space: () => info("Space", `<p>A Space is a small web app. Download all files to get its code.</p>`),
+  civitai: () => {
+    const t = (repo.repo_type || "").toLowerCase();
+    const where = /lora|locon|dora/.test(t) ? "<code>models/loras</code> (A1111 / Forge: <code>models/Lora</code>)"
+      : /checkpoint/.test(t) ? "<code>models/checkpoints</code> (A1111 / Forge: <code>models/Stable-diffusion</code>)"
+      : /textualinversion|embedding/.test(t) ? "the <code>embeddings</code> folder"
+      : /controlnet/.test(t) ? "<code>models/controlnet</code>"
+      : /vae/.test(t) ? "<code>models/vae</code>"
+      : /upscaler/.test(t) ? "<code>models/upscale_models</code> (A1111 / Forge: <code>models/ESRGAN</code>)"
+      : /hypernetwork/.test(t) ? "<code>models/hypernetworks</code>"
+      : "the matching folder inside the <code>models</code> folder of your image program";
+    const words = (repo.trigger_words || []).map(w => `<code>${esc(w)}</code>`).join(" ");
+    const vers = repo.versions && repo.versions.length > 1
+      ? `<p><b style="display:inline">Version:</b> <select id="verSel">${repo.versions.map(v => `<option value="${v.id}" ${v.id === repo.version_id ? "selected" : ""}>${esc(v.name || v.id)}${v.base_model ? " (" + esc(v.base_model) + ")" : ""}</option>`).join("")}</select> <span class="muted">Newest is first. Changing it reloads the file list.</span></p>` : "";
+    return info(`Civitai ${esc(repo.repo_type)}: the main file is pre-selected`,
+      `<p>Civitai models are for image programs such as <b style="display:inline">ComfyUI, Forge or A1111</b>. Most versions have <b style="display:inline">one main file</b>. Other files, if any, are optional.</p>
+       <ul>
+         <li><b style="display:inline">Where does it go?</b> Into ${where}. These programs also find files inside subfolders, so you can pick that models folder in step 1 and keep the subfolder option on.</li>
+         ${repo.base_model ? `<li><b style="display:inline">Made for:</b> ${esc(repo.base_model)}. Use it with a matching base model.</li>` : ""}
+         ${words ? `<li><b style="display:inline">Trigger words:</b> ${words}. Put these in your prompt to activate it.</li>` : ""}
+         ${repo.early_access ? `<li><b style="display:inline">Early access:</b> this version may need a Civitai API key (Settings) and a Buzz purchase on the site.</li>` : ""}
+       </ul>${vers}`);
+  },
+  generic: () => info("Pick the files", `<p>Everything is ticked by default. Untick what you do not need, or use the filter.</p>`),
+};
+function renderRepo() {
+  const total = repo.files.reduce((a, f) => a + f.size, 0);
+  const label = {gguf: "GGUF", transformers: "safetensors", onnx: "ONNX", weights: "weights", dataset: "dataset", space: "space", civitai: repo.repo_type, generic: repo.repo_type}[repo.kind];
+  $("#repoHead").innerHTML = `<b>${esc(repo.repo_id)}</b><span class="badge">${esc(label)}</span>` +
+    (repo.source === "civitai" ? '<span class="badge">Civitai</span>' + (repo.nsfw ? '<span class="badge warn">NSFW</span>' : "") : "") +
+    (repo.gated ? '<span class="badge warn">gated</span>' : "") + (repo.private ? '<span class="badge warn">private</span>' : "") +
+    `<span class="muted">${repo.files.length} files, ${fmt(total)} total</span>`;
+  $("#kindInfo").innerHTML = KIND_TEXT[repo.kind]();
+  $("#subName").textContent = "'" + folderName() + "'";
+  const tags = {}, exts = {};
+  repo.files.forEach(f => {
+    const q = quantOf(f.name); if (q) tags[q] = (tags[q] || 0) + 1;
+    const e = f.name.match(/\.([A-Za-z0-9]+)$/); if (e) exts["." + e[1].toLowerCase()] = (exts["." + e[1].toLowerCase()] || 0) + 1;
+  });
+  const top = Object.keys(exts).sort((a, b) => exts[b] - exts[a]).slice(0, 4);
+  const all = [...Object.keys(tags).slice(0, 10), ...top];
+  $("#tagChips").innerHTML = all.length ? '<span class="muted">Quick filter:</span>' + all.map(t => `<button class="chip tg">${esc(t)}</button>`).join("") : "";
+}
+function safeName(id) { return id.split("/").pop().replace(/[^A-Za-z0-9._-]/g, "_"); }
+function folderName() { return safeName(repo.source === "civitai" ? (repo.folder || repo.repo_id) : repo.repo_id).slice(0, 80); }
+function renderPicks() {
+  const box = $("#picks");
+  if (repo.kind !== "gguf") { box.hidden = true; return; }
+  const g = quantGroups();
+  const defs = [
+    ["Best balance", "Good for most people", ["Q4_K_M", "Q4_K_S", "Q4_0"]],
+    ["Higher quality", "If you have spare memory", ["Q5_K_M", "Q5_K_S", "Q6_K"]],
+    ["Best quality", "Largest, near original", ["Q8_0", "Q6_K"]],
+    ["Smallest", "Low memory, some quality loss", ["Q3_K_M", "Q3_K_S", "Q2_K", "IQ3_M", "IQ2_M"]],
+  ];
+  const used = new Set(), cards = [];
+  defs.forEach(([title, sub, tags]) => {
+    const q = tags.find(t => g[t] && !used.has(t)); if (!q) return;
+    used.add(q);
+    const names = g[q].map(f => f.name), size = g[q].reduce((s, f) => s + f.size, 0);
+    const active = names.length === selected.size && names.every(n => selected.has(n));
+    cards.push(`<button class="pick ${active ? "active" : ""}" data-q="${q}"><b>${title}</b><span class="q">${q} · ${fmt(size)}</span><span class="s">${sub}</span></button>`);
+  });
+  box.hidden = !cards.length;
+  box.innerHTML = cards.length ? cards.join("") : "";
+}
+$("#picks").onclick = e => {
+  const b = e.target.closest(".pick"); if (!b) return;
+  selected = new Set(quantGroups()[b.dataset.q].map(f => f.name)); renderFiles();
+};
+function renderFiles() {
+  const m = matcher($("#filter").value), rows = [];
+  repo.files.forEach((f, i) => {
+    if (!m(f.name)) return;
+    const p = f.name.lastIndexOf("/"), dir = p >= 0 ? f.name.slice(0, p + 1) : "", base = f.name.slice(p + 1);
+    const fi = fileInfo(f);
+    rows.push(`<label class="frow ${fi.role === "dup" ? "dup" : ""}"><input type="checkbox" data-i="${i}" ${selected.has(f.name) ? "checked" : ""}>
+      <span class="fmain"><span class="fn"><i>${esc(dir)}</i>${esc(base)}</span>${fi.desc ? `<span class="fd">${esc(fi.desc)}</span>` : ""}</span>
+      ${fi.pill ? `<span class="fp ${fi.cls || (fi.role === "need" ? "need" : "")}">${esc(fi.pill)}</span>` : ""}<span class="fs">${fmt(f.size)}</span></label>`);
+  });
+  $("#files").innerHTML = rows.join("") || '<div class="empty">No files match.</div>';
+  renderSummary();
+}
+$("#files").onchange = e => {
+  const f = repo.files[+e.target.dataset.i];
+  e.target.checked ? selected.add(f.name) : selected.delete(f.name); renderSummary();
+};
+$("#filter").oninput = renderFiles;
+$("#tagChips").onclick = e => { if (e.target.classList.contains("tg")) { $("#filter").value = e.target.textContent; renderFiles(); } };
+$("#btnRec").onclick = () => { $("#filter").value = ""; selected = defaultSelection(); renderFiles(); };
+$("#btnSelShown").onclick = () => { const m = matcher($("#filter").value); repo.files.forEach(f => { if (m(f.name)) selected.add(f.name); }); renderFiles(); };
+$("#btnSelNone").onclick = () => { selected.clear(); renderFiles(); };
+$("#sub").onchange = () => renderSummary();
+function joinPath(base, name) { return base + (base.includes("\\") ? "\\" : "/") + name; }
+function renderSummary() {
+  if (!repo) return;
+  renderPicksSafe();
+  const files = repo.files.filter(f => selected.has(f.name)), total = files.reduce((a, f) => a + f.size, 0);
+  $("#sumLine").textContent = files.length ? `${files.length} file${files.length > 1 ? "s" : ""} selected, ${fmt(total)}` : "Nothing selected. Tick the files you want.";
+  $("#where").innerHTML = S.dest ? "Will be saved to: <b>" + esc($("#sub").checked ? joinPath(S.dest, folderName()) : S.dest) + "</b>" : "";
+  let warn = "";
+  if (!S.dest) warn = "Choose a destination folder in step 1 first.";
+  else if (S.free != null && total > S.free) warn = "Not enough free space on the destination drive (" + fmt(S.free) + " free).";
+  else if (repo.kind === "gguf") {
+    const qs = new Set(files.filter(f => /\.gguf$/i.test(f.name) && !/mmproj/i.test(f.name)).map(f => quantOf(f.name) || f.name));
+    if (qs.size > 1) warn = `You picked ${qs.size} different versions of the same model. You normally only need one.`;
+  }
+  $("#sumWarn").textContent = warn;
+  $("#btnDownload").disabled = !files.length || !S.dest;
+}
+function renderPicksSafe() { try { renderPicks(); } catch (e) {} }
+$("#btnDownload").onclick = async () => {
+  const files = repo.files.filter(f => selected.has(f.name));
+  try {
+    const r = await api("download", repo.source === "civitai"
+      ? {source: "civitai", host: repo.host, version_id: repo.version_id, repo_id: repo.repo_id, folder: repo.folder, files, subfolder: $("#sub").checked}
+      : {repo_id: repo.repo_id, repo_type: repo.repo_type, revision: repo.revision, files,
+         all: files.length === repo.files.length, subfolder: $("#sub").checked});
+    jobKinds[r.id] = repo.kind;
+    toast("Download started"); await refreshJobs();
+    $("#cardJobs").scrollIntoView({behavior: "smooth", block: "start"});
+  } catch (e) { toast(e.message); }
+};
+
+/* ---------- jobs ---------- */
+const DONE_HINT = {
+  civitai: "Next: copy the file into the matching <code>models</code> folder of ComfyUI, Forge or A1111 (see the note in step 3), then refresh the model list in your program.",
+  gguf: "Next: load the <code>.gguf</code> file in <b>LM Studio</b> (put it in its models folder or use Import), in <b>Ollama</b> (a Modelfile with <code>FROM path\\to\\file.gguf</code>), or run it with <code>llama-cli -m file.gguf</code>.",
+  transformers: "Next: in Python, <code>AutoModelForCausalLM.from_pretrained(r\"&lt;this folder&gt;\")</code> and the same for <code>AutoTokenizer</code>.",
+};
+function renderJobs(list) {
+  $("#cardJobs").hidden = !list.length;
+  $("#jobs").innerHTML = list.map(j => {
+    const pct = j.total ? Math.min(100, j.done / j.total * 100) : (j.status === "done" ? 100 : 0);
+    let line = "", cls = "", hint = "";
+    if (j.status === "running") line = `${fmt(j.done)} of ${fmt(j.total)} (${pct.toFixed(0)}%)` + (j.speed ? ` | ${fmt(j.speed)}/s` : "") + (j.eta != null ? ` | ${fmtEta(j.eta)}` : "");
+    else if (j.status === "done") { line = `Finished: ${j.nfiles} file${j.nfiles > 1 ? "s" : ""}, ${fmt(j.total)}`; cls = "done"; hint = DONE_HINT[jobKinds[j.id]] ? info("Done. What now?", `<p>${DONE_HINT[jobKinds[j.id]]}</p>`, "ok") : ""; }
+    else if (j.status === "cancelled") line = "Cancelled. Start it again to resume where it stopped.";
+    else { line = esc(j.error || "Failed"); cls = "bad"; }
+    const acts = j.status === "running"
+      ? `<button class="btn small danger" data-a="cancel" data-id="${j.id}">Cancel</button>`
+      : `<button class="btn small" data-a="open" data-id="${j.id}" data-p="${esc(j.target)}">Open folder</button><button class="btn small" data-a="remove" data-id="${j.id}">Remove</button>`;
+    return `<div class="job"><div class="top"><b>${esc(j.repo_id)}</b>${acts}</div>
+      <div class="track"><div class="fill ${cls}" style="width:${pct}%"></div></div>
+      <div class="muted">${line}</div><div class="muted">${esc(j.target)}</div>${hint}</div>`;
+  }).join("");
+}
+async function refreshJobs() { try { renderJobs(await api("jobs")); } catch (e) {} }
+$("#jobs").onclick = async e => {
+  const a = e.target.dataset.a; if (!a) return;
+  try {
+    if (a === "cancel") await api("cancel", {id: e.target.dataset.id});
+    if (a === "remove") await api("remove_job", {id: e.target.dataset.id});
+    if (a === "open") await api("open", {path: e.target.dataset.p});
+    refreshJobs();
+  } catch (err) { toast(err.message); }
+};
+
+/* ---------- settings ---------- */
+$("#btnSettings").onclick = $("#tokenPill").onclick = () => $("#dlg").showModal();
+$("#btnClose").onclick = () => $("#dlg").close();
+$("#btnTokenSave").onclick = async () => {
+  try {
+    S = await api("token", {token: $("#tokenInput").value}); $("#tokenInput").value = "";
+    await loadState(); toast(S.user ? "Signed in as " + S.user : "Token saved");
+    $("#dlg").close(); if (pendingRetry) lookup();
+  } catch (e) { toast(e.message); }
+};
+$("#btnTokenRemove").onclick = async () => {
+  try { await api("remove_token", {}); await loadState(); toast("Token removed"); } catch (e) { toast(e.message); }
+};
+$("#btnCivSave").onclick = async () => {
+  try {
+    S = await api("civitai_key", {key: $("#civInput").value}); $("#civInput").value = "";
+    await loadState(); toast("Civitai key saved"); $("#dlg").close(); if (pendingRetry) lookup();
+  } catch (e) { toast(e.message); }
+};
+$("#btnCivRemove").onclick = async () => {
+  try { await api("remove_civitai_key", {}); await loadState(); toast("Civitai key removed"); } catch (e) { toast(e.message); }
+};
+$("#perf").onchange = async e => { try { await api("perf", {high_performance: e.target.checked}); toast("Saved"); } catch (err) { toast(err.message); } };
+$("#btnQuit").onclick = async () => {
+  if (!confirm("Stop the downloader? Running downloads will be cancelled.")) return;
+  try { await api("quit", {}); } catch (e) {}
+  document.body.innerHTML = '<div style="padding:40px;text-align:center;font-family:system-ui">Stopped. You can close this tab.</div>';
+};
+
+loadState(); refreshJobs(); setInterval(refreshJobs, 1000);
+</script>
+</body>
+</html>
