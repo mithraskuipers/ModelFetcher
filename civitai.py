@@ -124,6 +124,19 @@ def api_get(host, path, key):
         raise ValueError("Civitai sent an answer that could not be read.")
 
 
+_STAT_KEYS = {
+    "downloadCount": "downloads", "thumbsUpCount": "thumbs_up", "thumbsDownCount": "thumbs_down",
+    "ratingCount": "rating_count", "rating": "rating", "commentCount": "comments",
+    "favoriteCount": "favorites", "tippedAmountCount": "buzz_tipped",
+}
+
+
+def _stats(d):
+    """The numbers shown under 'Stats' / 'Reviews' on a Civitai page, under readable names."""
+    d = d if isinstance(d, dict) else {}
+    return {new: d[old] for old, new in _STAT_KEYS.items() if isinstance(d.get(old), (int, float))}
+
+
 def lookup(text, key=None, version_override=None):
     spec = parse_url(text)
     host = spec["host"]
@@ -149,12 +162,23 @@ def lookup(text, key=None, version_override=None):
             "fp": md.get("fp"),
             "model_size": md.get("size"),
             "sha256": ((f.get("hashes") or {}).get("SHA256") or "").lower() or None,
+            "hashes": {str(k): str(v).lower() for k, v in (f.get("hashes") or {}).items() if v},
         })
     if not files:
         raise ValueError("This version has no files.")
     images = [{"url": im["url"], "type": im.get("type") or "image", "width": im.get("width"), "height": im.get("height")}
               for im in (chosen.get("images") or []) if isinstance(im, dict) and im.get("url")]
     name = m.get("name") or f"model-{spec['model_id']}"
+    details = {
+        "type": m.get("type"),
+        "published_at": chosen.get("publishedAt"),
+        "created_at": chosen.get("createdAt"),
+        "updated_at": chosen.get("updatedAt"),
+        "base_model": chosen.get("baseModel"),
+        "air": f"civitai:{spec['model_id']}@{chosen.get('id')}",
+        "version_stats": _stats(chosen.get("stats")),
+        "model_stats": _stats(m.get("stats")),
+    }
     return {
         "ok": True, "source": "civitai", "host": host,
         "repo_id": name, "repo_type": m.get("type") or "Model", "revision": None, "filename": None,
@@ -164,7 +188,7 @@ def lookup(text, key=None, version_override=None):
         "base_model": chosen.get("baseModel"), "trigger_words": chosen.get("trainedWords") or [],
         "early_access": bool(chosen.get("earlyAccessEndsAt")),
         "versions": [{"id": v.get("id"), "name": v.get("name"), "base_model": v.get("baseModel")} for v in versions],
-        "selected_file_id": spec["file_id"], "files": files, "images": images,
+        "selected_file_id": spec["file_id"], "files": files, "images": images, "details": details,
     }
 
 

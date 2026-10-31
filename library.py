@@ -57,10 +57,23 @@ def preview_dir_name(slug, model_id, version_id):
     return f"civitai-previews__{s}__model-{model_id}__version-{version_id}"
 
 
+def _file_entry(f, full, model_id, version_id):
+    return {
+        "id": f["id"], "name": f["name"], "size": f["size"], "sha256": f.get("sha256"),
+        "type": full.get("type"), "format": full.get("format"), "fp": full.get("fp"),
+        "hashes": full.get("hashes") or {},
+        "air": f"civitai:{model_id}@{version_id}+{f['id']}",
+    }
+
+
 def civitai_entry(url, meta, model_type, files, local_dir):
     """Build the library entry for a Civitai download. `meta` is the result of civitai.lookup()."""
     model_id, version_id = meta["model_id"], meta["version_id"]
     page_url = f"https://{meta['host']}/models/{model_id}?modelVersionId={version_id}"
+    now = datetime.now().astimezone().isoformat(timespec="seconds")
+    by_id = {f["id"]: f for f in meta.get("files") or []}
+    details = dict(meta.get("details") or {})
+    details["fetched_at"] = now  # when the stats below were read; they change over time
     return {
         "id": f"civitai-{model_id}-{version_id}",
         "source": "civitai",
@@ -75,7 +88,8 @@ def civitai_entry(url, meta, model_type, files, local_dir):
         "page_url": page_url,
         "model_id": model_id,
         "version_id": version_id,
-        "files": [{"id": f["id"], "name": f["name"], "size": f["size"], "sha256": f.get("sha256")} for f in files],
+        "details": details,
+        "files": [_file_entry(f, by_id.get(f["id"]) or {}, model_id, version_id) for f in files],
         "local_dir": str(local_dir),
         "previews": None,
     }
