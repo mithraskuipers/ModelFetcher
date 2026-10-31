@@ -282,6 +282,12 @@ a{color:var(--accent)}
   <div class="btns" style="justify-content:flex-end"><button class="btn" id="btnClose">Close</button></div>
 </dialog>
 
+<dialog id="dlgDup">
+  <h2 id="dupTitle"></h2>
+  <div id="dupBody"></div>
+  <div class="btns" id="dupBtns"></div>
+</dialog>
+
 <script>
 const SESSION = "__SESSION__";
 const $ = s => document.querySelector(s);
@@ -663,18 +669,56 @@ function renderSummary() {
   $("#btnDownload").disabled = !files.length || !S.dest;
 }
 function renderPicksSafe() { try { renderPicks(); } catch (e) {} }
-$("#btnDownload").onclick = async () => {
+async function startDownload(resolve) {
   const files = repo.files.filter(f => selected.has(f.name));
   try {
-    const r = await api("download", repo.source === "civitai"
+    const body = repo.source === "civitai"
       ? {source: "civitai", host: repo.host, version_id: repo.version_id, repo_id: repo.repo_id, folder: repo.folder, files, subfolder: $("#sub").checked,
          url: repo.query, model_type: currentType()}
       : {repo_id: repo.repo_id, repo_type: repo.repo_type, revision: repo.revision, files,
-         all: files.length === repo.files.length, subfolder: $("#sub").checked});
+         all: files.length === repo.files.length, subfolder: $("#sub").checked};
+    if (resolve) body.resolve = resolve;
+    const r = await api("download", body);
+    if (r.confirm) return askDuplicate(r.confirm);  // the server wants an answer first
     jobKinds[r.id] = repo.kind;
     toast("Download started"); await refreshJobs();
     $("#cardJobs").scrollIntoView({behavior: "smooth", block: "start"});
   } catch (e) { toast(e.message); }
+}
+$("#btnDownload").onclick = () => startDownload();
+
+/* ---------- "you already have this" ---------- */
+const CHOICE_LABEL = {
+  in_library: {replace: ex => ex.present ? "Download again and replace" : "Download again"},
+  on_disk: {keep: () => "Keep them and add to library", replace: () => "Replace with a fresh copy"},
+};
+function askDuplicate(c) {
+  const ex = c.existing || {};
+  if (c.reason === "in_library") {
+    const date = ex.downloaded_at ? new Date(ex.downloaded_at).toLocaleDateString(undefined, {year: "numeric", month: "short", day: "numeric"}) : "";
+    $("#dupTitle").textContent = "You already have this model";
+    $("#dupBody").innerHTML = `<p style="margin:10px 0 6px"><b>${esc(ex.name || c.name)}</b>${ex.version_name ? " (" + esc(ex.version_name) + ")" : ""} is in your library${ex.model_type ? " as <b>" + esc(ex.model_type) + "</b>" : ""}${date ? ", downloaded on " + esc(date) : ""}.</p>
+      <div class="path">${esc(ex.folder || "")}</div>
+      <p class="muted" style="margin:10px 0 0">${ex.present
+        ? "Downloading it again replaces these files with a fresh copy and updates its library entry."
+        : "The files are no longer in that folder. Downloading it again fetches them and updates its library entry."}</p>`;
+  } else {
+    const many = c.files.length > 1;
+    $("#dupTitle").textContent = "These files are already on your PC";
+    $("#dupBody").innerHTML = `<p style="margin:10px 0 6px">${c.files.map(f => `<b>${esc(f)}</b>`).join(", ")} ${many ? "are" : "is"} already in this folder, but ${many ? "they are" : "it is"} not in your library yet.</p>
+      <div class="path">${esc(c.folder)}</div>
+      <p class="muted" style="margin:10px 0 0">Keep ${many ? "them" : "it"} to skip the download and just add the model to your library, or replace ${many ? "them" : "it"} with a fresh copy.</p>`;
+  }
+  const labels = CHOICE_LABEL[c.reason];
+  const choices = [...c.choices].sort((a, b) => (a === "replace") - (b === "replace"));  // the replacing choice goes last, as the main button
+  $("#dupBtns").innerHTML = `<button class="btn" data-choice="">Cancel</button>` +
+    choices.map(k => `<button class="btn ${k === "replace" ? "primary" : ""}" data-choice="${k}">${esc(labels[k](ex))}</button>`).join("");
+  $("#dlgDup").showModal();
+}
+$("#dupBtns").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  $("#dlgDup").close();
+  if (b.dataset.choice) startDownload(b.dataset.choice);
 };
 
 /* ---------- jobs ---------- */

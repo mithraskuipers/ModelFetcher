@@ -364,7 +364,7 @@ function ambient(img) {  // img: an already loaded <img>, or null to fade the gl
 }
 
 /* ---------- state and rendering ---------- */
-const S = {models: [], map: new Map(), pics: 0, type: "all", q: "", sort: "recent", sensitive: pref("lib.sensitive") === "1", first: true};
+const S = {models: [], map: new Map(), dups: new Set(), pics: 0, type: "all", q: "", sort: "recent", sensitive: pref("lib.sensitive") === "1", first: true};
 const nodes = new Map();  // finished card elements by model id; reused so pictures are not rebuilt and decoded again
 const cmpDate = (a, b) => (Date.parse(a) || 0) - (Date.parse(b) || 0);
 const SORTS = {
@@ -403,7 +403,7 @@ function cardHTML(m, i) {
     <div class="mosaic n${sens ? 1 : Math.min(Math.max(n, 1), 4)}">${mosaic}</div>
     <div class="cbody">
       <div class="ctitle"><h3>${esc(m.name || "Untitled")}</h3><span class="badge">${esc(typeLabel(m.model_type))}</span></div>
-      <div class="sub">${m.base_model ? `<span>${esc(m.base_model)}</span>` : ""}${m.version_name ? `<span>${esc(m.version_name)}</span>` : ""}</div>
+      <div class="sub">${m.base_model ? `<span>${esc(m.base_model)}</span>` : ""}${m.version_name ? `<span>${esc(m.version_name)}</span>` : ""}${S.dups.has(String(m.name || "").trim().toLowerCase()) ? `<span title="Another model in your library has the same name">Model ${esc(m.model_id)}</span>` : ""}</div>
       <div class="stats">${stats}</div>
       <div class="foot"><span>${pub ? "Published " + esc(pub) : "Downloaded " + esc(fmtDate(m.downloaded_at) || "")}</span>${m.present ? "" : `<span class="warn">Files not found</span>`}</div>
     </div></article>`;
@@ -476,7 +476,7 @@ function openSheet(id, opener) {
     </div>
     <div class="info">
       <h2 id="sheetTitle">${esc(m.name || "Untitled")}</h2>
-      <div class="chips"><span class="chip acc">${esc(typeLabel(m.model_type))}</span>${m.base_model ? `<span class="chip">${esc(m.base_model)}</span>` : ""}${m.version_name ? `<span class="chip">${esc(m.version_name)}</span>` : ""}${m.nsfw ? `<span class="chip">Sensitive</span>` : ""}</div>
+      <div class="chips"><span class="chip acc">${esc(typeLabel(m.model_type))}</span>${m.base_model ? `<span class="chip">${esc(m.base_model)}</span>` : ""}${m.version_name ? `<span class="chip">${esc(m.version_name)}</span>` : ""}${S.dups.has(String(m.name || "").trim().toLowerCase()) ? `<span class="chip" title="Another model in your library has the same name">Model ${esc(m.model_id)}</span>` : ""}${m.nsfw ? `<span class="chip">Sensitive</span>` : ""}</div>
       <div class="actions">
         ${m.page_url ? `<a class="btn" href="${esc(m.page_url)}" target="_blank" rel="noopener">${ico("link")}Open on Civitai</a>` : ""}
         <button class="btn quiet" id="reveal">${ico("folder")}Show in folder</button>
@@ -492,6 +492,8 @@ function openSheet(id, opener) {
         ${row("Published", fmtDate(d.published_at))}
         ${row("Base model", m.base_model || d.base_model)}
         ${row("Version", m.version_name)}
+        ${row("Model ID", m.model_id != null ? String(m.model_id) : "")}
+        ${row("Version ID", m.version_id != null ? String(m.version_id) : "")}
         ${row("Downloaded", fmtDate(m.downloaded_at))}
         ${d.air ? row("AIR", copyBtn(d.air), true) : ""}
         ${m.url ? row("Link", `<a href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.url.replace(/^https?:\/\//, "").slice(0, 46))}${m.url.length > 54 ? "..." : ""}</a>`, true) : ""}
@@ -625,6 +627,8 @@ async function load(silent) {
     if (changed) {
       S.models = r.models;
       S.map = new Map(r.models.map(m => [m.id, m]));
+      const seen = {}; r.models.forEach(m => { const k = String(m.name || "").trim().toLowerCase(); seen[k] = (seen[k] || 0) + 1; });
+      S.dups = new Set(Object.keys(seen).filter(k => seen[k] > 1));  // names used by more than one model
       S.pics = r.models.reduce((n, m) => n + images(m).length, 0);
       nodes.clear();
     }

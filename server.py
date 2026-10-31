@@ -224,7 +224,7 @@ def already_running(target, names, skip=None):
                    for j in JOBS.values())
 
 
-def launch_job(label, target, files, spec, entry=None):
+def launch_job(label, target, files, spec, entry=None, notice=""):
     if already_running(target, [n for n, _ in files]):
         raise ApiError("This model is already downloading to that folder.")
     try:
@@ -244,7 +244,7 @@ def launch_job(label, target, files, spec, entry=None):
         "id": job_id, "repo_id": label, "target": str(target), "files": files,
         "total": sum(s for _, s in files), "done": 0, "speed": 0.0, "status": "running",
         "error": "", "started": time.time(), "tmp": tmp, "spec": spec, "proc": None, "cancel": False,
-        "entry": entry, "note": "",
+        "entry": entry, "note": notice, "notice": notice,
     }
     with LOCK:
         JOBS[job_id] = job
@@ -270,7 +270,36 @@ def civitai_meta(host, version_id, url):
         return {}
 
 
+def entry_present(m):
+    """True if every file of a library entry is still in its saved folder."""
+    folder = Path(m.get("local_dir") or "")
+    names = [f["name"] for f in m.get("files") or [] if f.get("name")]
+    return bool(names) and all((folder / n).is_file() for n in names)
+
+
+def same_size(path, expected):
+    try:
+        return bool(expected) and abs(path.stat().st_size - expected) <= 1024
+    except OSError:
+        return False
+
+
+def unique_target(dest, slug, model_id, version_id, names):
+    """A folder of its own for a model whose file names are already taken: <name>__<model id>, then with the version id."""
+    for cand in (f"{slug}__{model_id}", f"{slug}__{model_id}-{version_id}", *[f"{slug}__{model_id}-{version_id}-{n}" for n in range(2, 50)]):
+        folder = Path(dest) / cand
+        if not any((folder / n).exists() for n in names):
+            return folder
+    raise ApiError("Could not find a free folder name for this model.")
+
+
 def start_civitai_download(data, target=None, force=False):
+    """Start a Civitai download, or ask first.
+
+    Returns {"confirm": {...}} instead of starting when the model is already in the library, or when the same
+    files already sit in the folder. Send the request again with "resolve" set to one of the offered choices.
+    Files that belong to a different model are never touched: that download goes to a folder of its own.
+    """
     host = str(data.get("host", ""))
     if not civitai.host_ok(host):
         raise ApiError("Invalid Civitai address.")
@@ -286,12 +315,6 @@ def start_civitai_download(data, target=None, force=False):
     if not files:
         raise ApiError("Select at least one file.")
     label = str(data.get("repo_id") or "Civitai model")
-    if target is None:
-        dest = current_dest()
-        if not dest:
-            raise ApiError("Choose a destination folder first.")
-        folder = "".join(c if (c.isalnum() or c in "._-") else "_" for c in str(data.get("folder") or label))[:80] or "civitai-model"
-        target = Path(dest) / folder if data.get("subfolder") else Path(dest)
     url = str(data.get("url") or "").strip()[:2000]
     meta = civitai_meta(host, version_id, url)
     if meta.get("version_id") != version_id:
@@ -301,6 +324,44 @@ def start_civitai_download(data, target=None, force=False):
         library.ensure()
     except OSError as e:
         raise ApiError(f"Cannot use the library folder: {e}")
+
+    entry_id = f"civitai-{meta['model_id']}-{meta['version_id']}"
+    models = library.load()["models"]
+    existing = next((m for m in models if m.get("id") == entry_id), None)
+    names = [f["name"] for f in files]
+    resolve = str(data.get("resolve") or "")
+    notice = []
+
+    if target is None:  # started from the downloader page: work out where the files go and whether that is safe
+        dest = current_dest()
+        if not dest:
+            raise ApiError("Choose a destination folder first.")
+        slug = "".join(c if (c.isalnum() or c in "._-") else "_" for c in str(data.get("folder") or label))[:80] or "civitai-model"
+        target = Path(dest) / slug if data.get("subfolder") else Path(dest)
+
+        if existing and resolve != "replace":
+            return {"confirm": {"reason": "in_library", "name": label, "choices": ["replace"],
+                                "existing": {"name": existing.get("name"), "version_name": existing.get("version_name"), "model_type": existing.get("model_type"),
+                                             "downloaded_at": existing.get("downloaded_at"), "folder": existing.get("local_dir"), "present": entry_present(existing)}}}
+        if existing and entry_present(existing):
+            target, force = Path(existing["local_dir"]), True  # replace the files where they are
+        else:
+            clash = [(n, f["size"]) for n, f in zip(names, files) if (target / n).exists()]
+            if clash:
+                other_owner = any(m.get("id") != entry_id and Path(m.get("local_dir") or "") == target
+                                  and {f.get("name") for f in m.get("files") or []} & set(names) for m in models)
+                if other_owner or not all(same_size(target / n, size) for n, size in clash):
+                    # Different model, same file names: never overwrite or skip. Give this one its own folder.
+                    target = unique_target(dest, slug, meta["model_id"], meta["version_id"], names)
+                    notice.append(f"Another model already uses those file names, so this one was saved in its own folder ({target.name}).")
+                elif not resolve:
+                    return {"confirm": {"reason": "on_disk", "name": label, "folder": str(target), "files": [n for n, _ in clash], "choices": ["replace", "keep"]}}
+                elif resolve == "replace":
+                    force = True
+        twins = [m for m in models if m.get("id") != entry_id and str(m.get("name") or "").strip().lower() == label.strip().lower()]
+        if twins:
+            notice.append(f"You also have a different model named \"{label}\" (model {twins[0].get('model_id')}). Both are kept, and the library shows their IDs.")
+
     entry = library.civitai_entry(url, meta, model_type, files, target)
     spec = {"source": "civitai", "host": host, "version_id": version_id, "files": files, "force": bool(force)}
     images = [i for i in meta.get("images") or [] if i.get("url")]
@@ -308,7 +369,7 @@ def start_civitai_download(data, target=None, force=False):
         name = library.preview_dir_name(meta.get("folder"), meta["model_id"], meta["version_id"])
         spec["images"] = images
         spec["preview_dir"] = str(library.PREVIEWS_DIR / name)
-    return launch_job(label, target, [(f["name"], f["size"]) for f in files], spec, entry)
+    return launch_job(label, target, [(f["name"], f["size"]) for f in files], spec, entry, " ".join(notice))
 
 
 def start_download(data):
@@ -393,7 +454,7 @@ def record_library(job, result):
     except OSError as e:
         parts.append(f"could not update the library file ({e})")
     note = ", ".join(parts)
-    job["note"] = note[:1].upper() + note[1:]
+    job["note"] = (job.get("notice", "") + " " + note[:1].upper() + note[1:]).strip()
 
 
 def run_job(job):
@@ -531,9 +592,7 @@ def library_list(_data=None):
     """Everything the library page needs. `present` says whether the model files are still on disk."""
     models = library.load()["models"]
     for m in models:
-        folder = Path(m.get("local_dir") or "")
-        names = [f["name"] for f in m.get("files") or [] if f.get("name")]
-        m["present"] = bool(names) and all((folder / n).is_file() for n in names)
+        m["present"] = entry_present(m)
     return {"models": models}
 
 
