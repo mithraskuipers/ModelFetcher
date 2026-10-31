@@ -8,10 +8,11 @@ import sys
 import tempfile
 import threading
 import time
+import mimetypes
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from core import (
     NAME_RE,
@@ -465,10 +466,33 @@ def open_folder(data):
     known = {j["target"] for j in JOBS.values()} | {CONFIG.get("last_dir")}
     if path not in known or not Path(path).is_dir():
         raise ApiError("Unknown folder.")
+    show_in_explorer(path)
+    return {}
+
+
+def show_in_explorer(path):
     if os.name == "nt":
         os.startfile(path)
     else:
         subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", path])
+
+
+def library_list(_data=None):
+    """Everything the library page needs. `present` says whether the model files are still on disk."""
+    models = library.load()["models"]
+    for m in models:
+        folder = Path(m.get("local_dir") or "")
+        names = [f["name"] for f in m.get("files") or [] if f.get("name")]
+        m["present"] = bool(names) and all((folder / n).is_file() for n in names)
+    return {"models": models}
+
+
+def library_open(data):
+    entry = next((m for m in library.load()["models"] if m.get("id") == data.get("id")), None)
+    folder = Path((entry or {}).get("local_dir") or "")
+    if not entry or not folder.is_dir():
+        raise ApiError("That folder no longer exists. The model may have been moved or deleted.")
+    show_in_explorer(str(folder))
     return {}
 
 
@@ -527,7 +551,7 @@ def quit_app(_data=None):
 
 
 ROUTES = {
-    ("GET", "state"): state, ("GET", "jobs"): jobs_list,
+    ("GET", "state"): state, ("GET", "jobs"): jobs_list, ("GET", "library"): library_list, ("POST", "library_open"): library_open,
     ("POST", "set_dest"): set_dest, ("POST", "browse"): browse, ("POST", "inspect"): inspect_repo,
     ("POST", "download"): start_download, ("POST", "cancel"): cancel_job, ("POST", "remove_job"): remove_job,
     ("POST", "open"): open_folder, ("POST", "token"): save_token, ("POST", "remove_token"): remove_token,
@@ -540,12 +564,12 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-    def send_body(self, code, body, ctype="application/json"):
+    def send_body(self, code, body, ctype="application/json", cache="no-store"):
         data = body if isinstance(body, bytes) else json.dumps(body).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache)
         self.end_headers()
         self.wfile.write(data)
 
@@ -573,9 +597,28 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/":
             html = (WEB_DIR / "index.html").read_text(encoding="utf-8").replace("__SESSION__", SESSION)
             return self.send_body(200, html.encode("utf-8"), "text/html; charset=utf-8")
+        if path.rstrip("/") == "/library":
+            html = (WEB_DIR / "library.html").read_text(encoding="utf-8").replace("__SESSION__", SESSION)
+            return self.send_body(200, html.encode("utf-8"), "text/html; charset=utf-8")
+        if path.startswith("/library/previews/"):
+            return self.send_preview(path, urlparse(self.path).query)
         if path.startswith("/api/"):
             return self.handle_api("GET", path[5:], {})
         self.send_body(404, {"error": "Not found."})
+
+    def send_preview(self, path, query):
+        """Serve one saved preview image. Needs the session key, and never leaves library/previews/."""
+        if parse_qs(query).get("s", [""])[0] != SESSION:
+            return self.send_body(403, {"error": "Bad session."})
+        root = library.PREVIEWS_DIR.resolve()
+        try:
+            file = (library.LIBRARY_DIR / unquote(path[len("/library/"):])).resolve()
+            file.relative_to(root)
+            data = file.read_bytes()
+        except (ValueError, OSError):
+            return self.send_body(404, {"error": "Not found."})
+        ctype = mimetypes.guess_type(file.name)[0] or "application/octet-stream"
+        self.send_body(200, data, ctype, cache="private, max-age=86400")
 
     def do_POST(self):
         if not self.host_ok():
@@ -605,7 +648,8 @@ def main():
         return
     url = f"http://127.0.0.1:{PORT}/"
     print("ModelFetcher is running.")
-    print(f"Open: {url}")
+    print(f"Downloader: {url}")
+    print(f"Library:    {url}library")
     print("Close this window or press Ctrl+C to stop.")
     if "--no-browser" not in sys.argv:
         threading.Timer(0.8, webbrowser.open, args=[url]).start()
