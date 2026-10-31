@@ -8,9 +8,10 @@
 <style>
 :root{
   --bg:#eceef4; --text:#1d1d1f; --muted:#6e6e73; --faint:#8e8e93;
-  --glass:rgba(255,255,255,.55); --glass-strong:rgba(250,250,253,.80); --solid:#f7f7fa;
+  --glass:rgba(255,255,255,.62); --glass-strong:rgba(250,250,253,.80); --solid:#f7f7fa;
   --edge:rgba(255,255,255,.80); --hi:rgba(255,255,255,.55); --line:rgba(60,60,67,.13); --tile:rgba(120,120,128,.10);
   --shadow:0 1px 1px rgba(0,0,0,.04),0 10px 28px rgba(30,30,60,.09),0 28px 64px rgba(30,30,60,.10);
+  --shadow-sm:0 1px 2px rgba(0,0,0,.06),0 6px 14px rgba(30,30,60,.07); --sheet:rgba(248,248,252,.96); --glass-hover:rgba(255,255,255,.72);
   --accent:#0071e3; --accent-soft:rgba(0,113,227,.13); --ok:#248a3d; --warn:#b25000;
   --mesh1:rgba(0,113,227,.20); --mesh2:rgba(175,82,222,.15); --mesh3:rgba(255,149,0,.12);
   --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
@@ -19,9 +20,10 @@
 @media (prefers-color-scheme:dark){
   :root{
     --bg:#0a0a0e; --text:#f5f5f7; --muted:#a1a1a6; --faint:#86868b;
-    --glass:rgba(44,44,54,.48); --glass-strong:rgba(34,34,42,.82); --solid:#1d1d23;
+    --glass:rgba(44,44,54,.56); --glass-strong:rgba(34,34,42,.82); --solid:#1d1d23;
     --edge:rgba(255,255,255,.13); --hi:rgba(255,255,255,.10); --line:rgba(255,255,255,.10); --tile:rgba(255,255,255,.07);
     --shadow:0 1px 1px rgba(0,0,0,.3),0 12px 32px rgba(0,0,0,.35),0 30px 70px rgba(0,0,0,.45);
+    --shadow-sm:0 1px 2px rgba(0,0,0,.30),0 6px 14px rgba(0,0,0,.28); --sheet:rgba(30,30,36,.96); --glass-hover:rgba(58,58,70,.62);
     --accent:#2997ff; --accent-soft:rgba(41,151,255,.18); --ok:#32d74b; --warn:#ff9f0a;
     --mesh1:rgba(41,151,255,.22); --mesh2:rgba(191,90,242,.18); --mesh3:rgba(255,159,10,.10);
   }
@@ -29,24 +31,23 @@
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html{-webkit-text-size-adjust:100%}
-body{margin:0;min-height:100vh;color:var(--text);font:15px/1.45 var(--font);letter-spacing:-.011em;-webkit-font-smoothing:antialiased;
-  background:radial-gradient(60% 50% at 12% 6%,var(--mesh1),transparent 70%),radial-gradient(48% 44% at 92% 14%,var(--mesh2),transparent 70%),radial-gradient(60% 50% at 58% 104%,var(--mesh3),transparent 70%),var(--bg);
-  background-attachment:fixed}
+body{margin:0;min-height:100vh;color:var(--text);font:15px/1.45 var(--font);letter-spacing:-.011em;-webkit-font-smoothing:antialiased;background:var(--bg)}
+body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
+  background:radial-gradient(60% 50% at 12% 6%,var(--mesh1),transparent 70%),radial-gradient(48% 44% at 92% 14%,var(--mesh2),transparent 70%),radial-gradient(60% 50% at 58% 104%,var(--mesh3),transparent 70%)}
 button,select,input{font:inherit;color:inherit;letter-spacing:inherit}
 button{cursor:pointer}
 a{color:var(--accent);text-decoration:none}
 :focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 55%,transparent);outline-offset:2px}
 svg{width:1em;height:1em;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 
-/* ambient light: the open or hovered model's own picture, blurred behind the glass */
-.ambient{position:fixed;inset:-12%;z-index:-1;pointer-events:none;overflow:hidden}
-.ambient i{position:absolute;inset:0;background-size:cover;background-position:center;filter:blur(80px) saturate(1.7);opacity:0;transition:opacity 1s ease}
-.ambient i.on{opacity:.30}
-@media (prefers-color-scheme:dark){.ambient i.on{opacity:.26}}
+/* ambient light: colours sampled from the hovered or open model's picture, drawn as plain gradients (no blur filter) */
+.ambient{position:fixed;inset:0;z-index:-1;pointer-events:none}
+.ambient i{position:absolute;inset:0;opacity:0;transition:opacity .8s ease}
+.ambient i.on{opacity:1}
 
-.glass{background:var(--glass);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%);
-  border:1px solid var(--edge);box-shadow:var(--shadow),inset 0 1px 0 var(--hi)}
-@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.glass{background:var(--solid)}}
+.glass{background:var(--glass);border:1px solid var(--edge);box-shadow:var(--shadow-sm),inset 0 1px 0 var(--hi)}
+.frost{-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px)}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.frost{background:var(--solid)}}
 
 .wrap{max-width:1320px;margin:0 auto;padding:28px 28px 64px}
 
@@ -80,8 +81,8 @@ select.tool option{color:#1d1d1f}
 
 /* grid and cards */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:22px}
-.card{display:flex;flex-direction:column;padding:8px;border-radius:26px;text-align:left;color:inherit;cursor:pointer;transition:transform .35s cubic-bezier(.2,.8,.2,1),box-shadow .35s}
-.card:hover{transform:translateY(-3px)}
+.card{display:flex;flex-direction:column;padding:8px;border-radius:26px;text-align:left;color:inherit;cursor:pointer;content-visibility:auto;contain-intrinsic-size:auto 470px}
+.card.glass:hover{background:var(--glass-hover)}
 .mosaic{position:relative;display:grid;gap:4px;height:230px;border-radius:19px;overflow:hidden;background:var(--tile)}
 .mosaic.n1{grid-template-columns:1fr}
 .mosaic.n2{grid-template-columns:1fr 1fr}
@@ -90,14 +91,10 @@ select.tool option{color:#1d1d1f}
 .mosaic.n3 .m1,.mosaic.n4 .m1{grid-column:2;grid-row:1}
 .mosaic.n3 .m2,.mosaic.n4 .m2{grid-column:2;grid-row:2}
 .mosaic .m{position:relative;overflow:hidden;min-width:0;min-height:0}
-.mosaic img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;transition:transform .6s cubic-bezier(.2,.8,.2,1),filter .3s}
-.card:hover .m0 img{transform:scale(1.03)}
-.more{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.38);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);color:#fff;font-weight:600;font-size:18px}
+.mosaic img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.more{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.5);color:#fff;font-weight:600;font-size:18px}
 .empty-m{display:grid;place-items:center;align-content:center;gap:6px;color:var(--faint);font-size:13.5px;height:100%;grid-column:1 / -1}
 .empty-m svg{font-size:30px}
-.sens .m img,.sens .stage img,.sens .thumb img{filter:blur(24px) saturate(.8)}
-.sens-tag{position:absolute;left:10px;top:10px;z-index:2;display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:rgba(0,0,0,.45);color:#fff;font-size:12.5px;font-weight:500;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
-.sens-tag svg{font-size:13px}
 .cbody{padding:14px 12px 10px;display:flex;flex-direction:column;gap:10px;flex:1}
 .ctitle{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
 .ctitle h3{margin:0;font-size:18px;line-height:1.22;font-weight:650;letter-spacing:-.022em;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -115,7 +112,7 @@ select.tool option{color:#1d1d1f}
 
 /* first load: one soft reveal */
 @media (prefers-reduced-motion:no-preference){
-  .grid.first .card{animation:rise .7s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i)*45ms)}
+  .grid.first .card:nth-child(-n+8){animation:rise .7s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i)*45ms)}
 }
 @keyframes rise{from{opacity:0;transform:translateY(18px) scale(.985)}}
 
@@ -128,18 +125,18 @@ select.tool option{color:#1d1d1f}
 .btn:hover{filter:brightness(1.06)}
 
 /* detail sheet */
-.scrim{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:24px;background:rgba(0,0,0,.30);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);opacity:0;pointer-events:none;transition:opacity .28s}
+.scrim{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:24px;background:rgba(0,0,0,.42);opacity:0;pointer-events:none;transition:opacity .28s}
 .scrim.open{opacity:1;pointer-events:auto}
 .sheet{position:relative;width:min(1100px,100%);height:min(760px,calc(100dvh - 48px));display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);border-radius:30px;overflow:hidden;
-  background:var(--glass-strong);transform:translateY(16px) scale(.985);transition:transform .4s cubic-bezier(.2,.8,.2,1)}
+  background:var(--sheet);border:1px solid var(--edge);box-shadow:var(--shadow);transform:translateY(16px) scale(.985);transition:transform .4s cubic-bezier(.2,.8,.2,1)}
 .scrim.open .sheet{transform:none}
 .x{position:absolute;right:14px;top:14px;z-index:5;width:34px;height:34px;border-radius:50%;border:0;display:grid;place-items:center;background:var(--tile);color:var(--muted);font-size:16px}
 .x:hover{color:var(--text)}
 .gal{display:flex;flex-direction:column;gap:10px;padding:12px;min-height:0;min-width:0}
 .stage{position:relative;flex:1;min-height:260px;border:0;padding:0;border-radius:20px;overflow:hidden;background:rgba(0,0,0,.28);cursor:zoom-in}
 .stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block}
-.counter{position:absolute;right:12px;bottom:12px;padding:4px 11px;border-radius:999px;background:rgba(0,0,0,.45);color:#fff;font-size:12.5px;font-variant-numeric:tabular-nums;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
-.nav{position:absolute;top:50%;transform:translateY(-50%);width:38px;height:38px;border-radius:50%;border:0;display:grid;place-items:center;background:rgba(0,0,0,.42);color:#fff;font-size:18px;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);z-index:2}
+.counter{position:absolute;right:12px;bottom:12px;padding:4px 11px;border-radius:999px;background:rgba(0,0,0,.6);color:#fff;font-size:12.5px;font-variant-numeric:tabular-nums}
+.nav{position:absolute;top:50%;transform:translateY(-50%);width:38px;height:38px;border-radius:50%;border:0;display:grid;place-items:center;background:rgba(0,0,0,.55);color:#fff;font-size:18px;z-index:2}
 .nav.prev{left:12px}.nav.next{right:12px}
 .thumbs{display:flex;gap:6px;overflow-x:auto;padding:2px;scrollbar-width:thin}
 .thumb{flex:none;width:64px;height:64px;border:0;padding:0;border-radius:12px;overflow:hidden;opacity:.62;position:relative;transition:opacity .2s}
@@ -182,7 +179,7 @@ dl.kv dd{margin:0;text-align:right;min-width:0;overflow-wrap:anywhere}
 .hashes .copy em{font-style:normal;color:var(--faint);font-family:var(--font)}
 
 /* lightbox */
-.lb{position:fixed;inset:0;z-index:60;display:grid;place-items:center;background:rgba(0,0,0,.78);-webkit-backdrop-filter:blur(22px) saturate(1.4);backdrop-filter:blur(22px) saturate(1.4)}
+.lb{position:fixed;inset:0;z-index:60;display:grid;place-items:center;background:rgba(0,0,0,.9)}
 .lb img{max-width:min(96vw,1400px);max-height:92dvh;object-fit:contain;border-radius:14px;box-shadow:0 30px 80px rgba(0,0,0,.5)}
 .lb .x{background:rgba(255,255,255,.16);color:#fff}
 .lb .nav{background:rgba(255,255,255,.16)}
@@ -220,7 +217,7 @@ dl.kv dd{margin:0;text-align:right;min-width:0;overflow-wrap:anywhere}
     <a class="back glass" href="/"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>Downloader</a>
   </div>
 
-  <div class="toolbar glass" id="toolbar" hidden>
+  <div class="toolbar glass frost" id="toolbar" hidden>
     <div class="seg" id="seg" role="group" aria-label="Filter by model type"></div>
     <div class="grow"></div>
     <label class="search">
@@ -244,7 +241,7 @@ dl.kv dd{margin:0;text-align:right;min-width:0;overflow-wrap:anywhere}
 </main>
 
 <div class="scrim" id="scrim" aria-hidden="true">
-  <div class="sheet glass" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"></div>
 </div>
 <div class="lb" id="lb" hidden role="dialog" aria-modal="true" aria-label="Full size preview">
   <button class="x" id="lbClose" aria-label="Close preview"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
@@ -295,11 +292,19 @@ const shortHash = h => h.length > 14 ? h.slice(0, 6) + "..." + h.slice(-6) : h;
 const num = v => typeof v === "number" ? v : null;
 const stat = (m, k) => num(((m.details || {}).version_stats || {})[k]) ?? num(((m.details || {}).model_stats || {})[k]);
 const IMAGE_EXT = /\.(jpe?g|png|webp|gif|avif)$/i;
+const IMGS = new WeakMap();  // image URLs are built once per model, not on every render
 function images(m) {
-  const p = m.previews;
-  if (!p || !p.dir || !Array.isArray(p.files)) return [];
-  const dir = p.dir.split("/").map(encodeURIComponent).join("/");
-  return p.files.filter(f => IMAGE_EXT.test(f)).map(f => `/library/${dir}/${encodeURIComponent(f)}?s=${encodeURIComponent(SESSION)}`);
+  let r = IMGS.get(m);
+  if (!r) {
+    const p = m.previews;
+    if (!p || !p.dir || !Array.isArray(p.files)) r = [];
+    else {
+      const dir = p.dir.split("/").map(encodeURIComponent).join("/");
+      r = p.files.filter(f => IMAGE_EXT.test(f)).map(f => `/library/${dir}/${encodeURIComponent(f)}?s=${encodeURIComponent(SESSION)}`);
+    }
+    IMGS.set(m, r);
+  }
+  return r;
 }
 async function api(name, body) {
   const r = await fetch("/api/" + name, {method: body ? "POST" : "GET", headers: {"X-Session": SESSION, "Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined});
@@ -322,19 +327,45 @@ function pref(key, val) {
 }
 
 /* ---------- ambient light ---------- */
+// No blur filter: the picture is shrunk to 6x6 pixels once, three colours are read from it, and they become plain gradients.
+const palette = new Map();  // image URL -> three colours
+const cv = document.createElement("canvas"); cv.width = cv.height = 6;
+const cx = cv.getContext("2d", {willReadFrequently: true});
+function boost([r, g, b]) {  // a little more colour, like the old saturate(), without a filter
+  const gray = (r + g + b) / 3, f = 1.5, c = v => Math.max(0, Math.min(255, Math.round(gray + (v - gray) * f)));
+  return [c(r), c(g), c(b)];
+}
+function colorsOf(img, key) {
+  if (palette.has(key)) return palette.get(key);
+  let out = null;
+  try {
+    cx.clearRect(0, 0, 6, 6); cx.drawImage(img, 0, 0, 6, 6);
+    const d = cx.getImageData(0, 0, 6, 6).data;
+    const avg = (x0, y0, x1, y1) => { let r = 0, g = 0, b = 0, n = 0; for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const i = (y * 6 + x) * 4; r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; } return boost([r / n, g / n, b / n]); };
+    out = [avg(0, 0, 3, 3), avg(3, 0, 6, 3), avg(1, 3, 5, 6)];
+  } catch { /* unreadable image: no glow */ }
+  palette.set(key, out);
+  return out;
+}
 let ambFlip = 0;
-function ambient(url) {
+function ambient(img) {  // img: an already loaded <img>, or null to fade the glow out
   const a = [$("#amb0"), $("#amb1")], cur = a[ambFlip];
-  if (url && cur.dataset.url === url) return;
-  if (!url) { a.forEach(el => { el.classList.remove("on"); delete el.dataset.url; }); return; }
+  if (!img) { a.forEach(el => { el.classList.remove("on"); delete el.dataset.key; }); return; }
+  if (!img.complete || !img.naturalWidth) return;
+  const key = img.currentSrc || img.src;
+  if (cur.dataset.key === key) return;
+  const cs = colorsOf(img, key);
+  if (!cs) return;
+  const c = i => `rgba(${cs[i].join(",")},.36)`;
   ambFlip = 1 - ambFlip;
   const next = a[ambFlip];
-  next.style.backgroundImage = `url("${url}")`; next.dataset.url = url;
-  next.classList.add("on"); cur.classList.remove("on"); delete cur.dataset.url;
+  next.style.background = `radial-gradient(60% 55% at 18% 12%,${c(0)},transparent 72%),radial-gradient(55% 50% at 88% 20%,${c(1)},transparent 72%),radial-gradient(70% 60% at 55% 105%,${c(2)},transparent 72%)`;
+  next.dataset.key = key; next.classList.add("on"); cur.classList.remove("on"); delete cur.dataset.key;
 }
 
 /* ---------- state and rendering ---------- */
-const S = {models: [], type: "all", q: "", sort: "recent", sensitive: pref("lib.sensitive") === "1", first: true};
+const S = {models: [], map: new Map(), pics: 0, type: "all", q: "", sort: "recent", sensitive: pref("lib.sensitive") === "1", first: true};
+const nodes = new Map();  // finished card elements by model id; reused so pictures are not rebuilt and decoded again
 const cmpDate = (a, b) => (Date.parse(a) || 0) - (Date.parse(b) || 0);
 const SORTS = {
   recent: (a, b) => cmpDate(b.downloaded_at, a.downloaded_at),
@@ -360,15 +391,16 @@ function cardHTML(m, i) {
   const imgs = images(m), n = imgs.length, shown = imgs.slice(0, 3);
   const sens = m.nsfw && !S.sensitive;
   let mosaic;
-  if (!n) mosaic = `<div class="empty-m">${ico("image")}No previews saved</div>`;
+  if (sens) mosaic = `<div class="empty-m">${ico("eyeoff")}Sensitive previews hidden</div>`;
+  else if (!n) mosaic = `<div class="empty-m">${ico("image")}No previews saved</div>`;
   else mosaic = shown.map((u, k) => `<div class="m m${k}"><img src="${u}" alt="" loading="lazy" decoding="async">${k === 2 && n > 3 ? `<div class="more">+${n - 3}</div>` : ""}</div>`).join("");
   const defs = [["downloads", "Downloads", "download"], ["thumbs_up", "Likes", "thumb"], ["buzz_tipped", "Buzz", "bolt"], ["comments", "Comments", "chat"], ["favorites", "Favorites", "heart"]];
   const st = defs.filter(d => stat(m, d[0]) != null).slice(0, 3);
   const stats = st.length ? st.map(([k, l, ic]) => `<div class="stat" title="${esc(l)}: ${stat(m, k).toLocaleString()}">${ico(ic)}<div><b>${fmtN(stat(m, k))}</b><span>${l}</span></div></div>`).join("")
     : `<div class="nostats">No stats saved for this model.</div>`;
   const pub = fmtDate((m.details || {}).published_at);
-  return `<article class="card glass${sens ? " sens" : ""}" tabindex="0" role="button" data-id="${esc(m.id)}" style="--i:${Math.min(i, 14)}" aria-label="Open ${esc(m.name)}">
-    <div class="mosaic n${Math.min(Math.max(n, 1), 4)}">${sens ? `<div class="sens-tag">${ico("eyeoff")}Sensitive</div>` : ""}${mosaic}</div>
+  return `<article class="card glass" tabindex="0" role="button" data-id="${esc(m.id)}" style="--i:${Math.min(i, 14)}" aria-label="Open ${esc(m.name)}">
+    <div class="mosaic n${sens ? 1 : Math.min(Math.max(n, 1), 4)}">${mosaic}</div>
     <div class="cbody">
       <div class="ctitle"><h3>${esc(m.name || "Untitled")}</h3><span class="badge">${esc(typeLabel(m.model_type))}</span></div>
       <div class="sub">${m.base_model ? `<span>${esc(m.base_model)}</span>` : ""}${m.version_name ? `<span>${esc(m.version_name)}</span>` : ""}</div>
@@ -378,7 +410,7 @@ function cardHTML(m, i) {
 }
 function render() {
   const list = visible(), total = S.models.length;
-  const pics = S.models.reduce((s, m) => s + images(m).length, 0);
+  const pics = S.pics;
   $("#subtitle").textContent = total ? `${total} ${total === 1 ? "model" : "models"} with ${pics} preview ${pics === 1 ? "image" : "images"}` : "Nothing downloaded yet";
   $("#toolbar").hidden = !total;
   const grid = $("#grid"), state = $("#state");
@@ -398,17 +430,26 @@ function render() {
   state.innerHTML = "";
   grid.hidden = false;
   grid.classList.toggle("first", S.first);
-  grid.innerHTML = list.map(cardHTML).join("");
+  grid.replaceChildren(...list.map((m, i) => {
+    let el = nodes.get(m.id);
+    if (!el) {
+      const t = document.createElement("template");
+      t.innerHTML = cardHTML(m, i).trim();
+      el = t.content.firstElementChild;
+      nodes.set(m.id, el);
+    }
+    return el;
+  }));
   S.first = false;
 }
 
 /* ---------- detail sheet ---------- */
 let G = null;  // {m, imgs, i, opener}
 function openSheet(id, opener) {
-  const m = S.models.find(x => x.id === id);
+  const m = S.map.get(id);
   if (!m) return;
-  G = {m, imgs: images(m), i: 0, opener};
   const d = m.details || {}, sens = m.nsfw && !S.sensitive;
+  G = {m, imgs: sens ? [] : images(m), i: 0, opener};
   const defs = [["downloads", "Downloads", "download"], ["thumbs_up", "Likes", "thumb"], ["thumbs_down", "Dislikes", "thumb"], ["buzz_tipped", "Buzz", "bolt"],
     ["comments", "Comments", "chat"], ["favorites", "Favorites", "heart"], ["rating", "Rating", "star"]];
   const tiles = defs.filter(x => stat(m, x[0]) != null).map(([k, l, ic]) => `<div class="tile">${ico(ic)}<b title="${stat(m, k).toLocaleString()}">${k === "rating" ? stat(m, k).toFixed(1) : fmtN(stat(m, k))}</b><span>${l}</span></div>`).join("");
@@ -424,14 +465,14 @@ function openSheet(id, opener) {
   }).join("");
   const trig = (m.trigger_words || []).map(t => `<button class="chip" data-copy="${esc(t)}" title="Copy">${esc(t)}</button>`).join("");
   const snap = fmtDate(d.fetched_at);
-  $("#sheet").className = "sheet glass" + (sens ? " sens" : "");
+  $("#sheet").className = "sheet";
   $("#sheet").innerHTML = `
     <button class="x" id="sheetClose" aria-label="Close">${ico("close")}</button>
     <div class="gal">
       ${G.imgs.length ? `<button class="stage" id="stage" aria-label="Open full size preview"><img id="stageImg" alt=""><div class="counter" id="count"></div>
         ${G.imgs.length > 1 ? `<span class="nav prev" id="prev" role="button" aria-label="Previous image">${ico("left")}</span><span class="nav next" id="next" role="button" aria-label="Next image">${ico("right")}</span>` : ""}</button>
         ${G.imgs.length > 1 ? `<div class="thumbs" id="thumbs">${G.imgs.map((u, k) => `<button class="thumb" data-i="${k}" aria-label="Preview ${k + 1}"><img src="${u}" alt="" loading="lazy" decoding="async"></button>`).join("")}</div>` : ""}`
-      : `<div class="stage" style="cursor:default"><div class="empty-m" style="color:#ddd">${ico("image")}No previews saved</div></div>`}
+      : `<div class="stage" style="cursor:default"><div class="empty-m" style="color:#ddd">${sens ? `${ico("eyeoff")}Sensitive previews are hidden<button class="btn quiet" id="showSens" style="margin-top:8px">Show sensitive previews</button>` : `${ico("image")}No previews saved`}</div></div>`}
     </div>
     <div class="info">
       <h2 id="sheetTitle">${esc(m.name || "Untitled")}</h2>
@@ -477,13 +518,14 @@ function closeSheet() {
 function setImage(i) {
   if (!G || !G.imgs.length) return;
   G.i = (i + G.imgs.length) % G.imgs.length;
-  $("#stageImg").src = G.imgs[G.i];
+  const el = $("#stageImg");
+  el.src = G.imgs[G.i];
+  if (el.complete && el.naturalWidth) ambient(el); else el.onload = () => ambient(el);
   $("#count").textContent = `${G.i + 1} of ${G.imgs.length}`;
   document.querySelectorAll("#thumbs .thumb").forEach((t, k) => {
     t.setAttribute("aria-current", k === G.i);
     if (k === G.i) t.scrollIntoView({block: "nearest", inline: "center", behavior: "smooth"});
   });
-  ambient(G.imgs[G.i]);
   if (!$("#lb").hidden) showLightbox();
 }
 function showLightbox() {
@@ -523,20 +565,24 @@ async function redownload() {
 const grid = $("#grid");
 grid.addEventListener("click", e => { const c = e.target.closest(".card"); if (c) openSheet(c.dataset.id, c); });
 grid.addEventListener("keydown", e => { const c = e.target.closest(".card"); if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openSheet(c.dataset.id, c); } });
+let lastCard = null, hoverTimer;
 function hoverAmbient(e) {
   const c = e.target.closest && e.target.closest(".card");
-  if (!c) return;
-  const m = S.models.find(x => x.id === c.dataset.id), imgs = m ? images(m) : [];
-  if (imgs.length && !(m.nsfw && !S.sensitive)) ambient(imgs[0]);
+  if (!c || c === lastCard) return;
+  lastCard = c;
+  clearTimeout(hoverTimer);
+  hoverTimer = setTimeout(() => { const img = c.querySelector(".m0 img"); if (img && !G) ambient(img); }, 140);
 }
 grid.addEventListener("pointerover", hoverAmbient);
 grid.addEventListener("focusin", hoverAmbient);
-grid.addEventListener("pointerleave", () => { if (!G) ambient(null); });
+grid.addEventListener("pointerleave", () => { lastCard = null; clearTimeout(hoverTimer); if (!G) ambient(null); });
 
 $("#seg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { S.type = b.dataset.type; render(); } });
-$("#q").addEventListener("input", e => { S.q = e.target.value; render(); });
+let qTimer;
+$("#q").addEventListener("input", e => { clearTimeout(qTimer); const v = e.target.value; qTimer = setTimeout(() => { S.q = v; render(); }, 140); });
 $("#sort").addEventListener("change", e => { S.sort = e.target.value; render(); });
-$("#sens").addEventListener("click", () => { S.sensitive = !S.sensitive; pref("lib.sensitive", S.sensitive ? "1" : "0"); render(); });
+function setSensitive(on) { S.sensitive = on; pref("lib.sensitive", on ? "1" : "0"); nodes.clear(); render(); }
+$("#sens").addEventListener("click", () => setSensitive(!S.sensitive));
 $("#state").addEventListener("click", e => { if (e.target.id === "clear") { S.q = ""; S.type = "all"; $("#q").value = ""; render(); } });
 
 $("#scrim").addEventListener("click", e => {
@@ -550,6 +596,7 @@ $("#scrim").addEventListener("click", e => {
   const cp = t.closest("[data-copy]"); if (cp) return copyText(cp.dataset.copy);
   if (t.closest("#reveal")) api("library_open", {id: G.m.id}).catch(err => toast(err.message));
   if (t.closest("#redl")) redownload();
+  if (t.closest("#showSens")) { const id = G.m.id, op = G.opener; setSensitive(true); openSheet(id, op); }
 });
 $("#lb").addEventListener("click", e => {
   if (e.target.closest("#lbPrev")) return setImage(G.i - 1);
@@ -575,7 +622,12 @@ async function load(silent) {
   try {
     const r = await api("library");
     const changed = JSON.stringify(r.models) !== JSON.stringify(S.models);
-    S.models = r.models;
+    if (changed) {
+      S.models = r.models;
+      S.map = new Map(r.models.map(m => [m.id, m]));
+      S.pics = r.models.reduce((n, m) => n + images(m).length, 0);
+      nodes.clear();
+    }
     if (changed && !G) render();
     else if (!silent) render();
   } catch (e) {
