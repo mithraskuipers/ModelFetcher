@@ -154,6 +154,9 @@ button.chip:hover{background:var(--accent-soft);color:var(--accent)}
 .actions{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 4px}
 .actions .btn{padding:9px 16px;font-size:14px}
 .note{margin:8px 0 0;font-size:13px;color:var(--warn)}
+.note.ok{color:var(--ok)}
+.btn:disabled{opacity:.55;cursor:default;filter:none}
+.btn.armed{background:var(--warn);color:#fff}
 .sec{margin:26px 0 10px;font-size:15px;font-weight:650;letter-spacing:-.015em}
 .sec small{font-weight:400;color:var(--faint);margin-left:8px;font-size:12.5px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px}
@@ -271,6 +274,7 @@ const I = {
   link: '<path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3A4 4 0 0011 18.7l1-1"/>',
   eyeoff: '<path d="M4 4l16 16M9.9 5.8A9 9 0 0112 5.5c6 0 9.5 6.5 9.5 6.5a16 16 0 01-3 3.8M6.2 7.5A16 16 0 002.5 12S6 18.5 12 18.5c1.4 0 2.6-.3 3.7-.8"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  refresh: '<path d="M20 12a8 8 0 11-2.6-5.9M20 4v5h-5"/>',
   left: '<path d="M15 5l-7 7 7 7"/>', right: '<path d="M9 5l7 7-7 7"/>',
 };
 const ico = n => `<svg viewBox="0 0 24 24" aria-hidden="true">${I[n]}</svg>`;
@@ -435,8 +439,10 @@ function openSheet(id, opener) {
       <div class="actions">
         ${m.page_url ? `<a class="btn" href="${esc(m.page_url)}" target="_blank" rel="noopener">${ico("link")}Open on Civitai</a>` : ""}
         <button class="btn quiet" id="reveal">${ico("folder")}Show in folder</button>
+        ${m.source === "civitai" ? `<button class="btn quiet" id="redl">${ico("refresh")}<span>${m.present ? "Redownload" : "Download again"}</span></button>` : ""}
       </div>
-      ${m.present ? "" : `<p class="note">The model files were not found in the saved folder. They may have been moved or deleted.</p>`}
+      <p class="note ok" id="redlNote" hidden></p>
+      ${m.present ? "" : `<p class="note">The model files were not found in the saved folder. They may have been moved or deleted. Use Download again to fetch them.</p>`}
       ${tiles ? `<h3 class="sec">Stats${snap ? `<small>as of ${esc(snap)}</small>` : ""}</h3><div class="tiles">${tiles}</div>${reviews ? `<p style="margin:10px 2px 0;color:var(--muted);font-size:13.5px">${esc(reviews)}</p>` : ""}` : ""}
       <h3 class="sec">Details</h3>
       <dl class="kv">
@@ -489,6 +495,30 @@ function showLightbox() {
 function openLightbox() { if (!G || !G.imgs.length) return; $("#lb").hidden = false; showLightbox(); $("#lbClose").focus({preventScroll: true}); }
 function closeLightbox() { $("#lb").hidden = true; const s = $("#stage"); if (s) s.focus({preventScroll: true}); }
 
+/* ---------- download again ---------- */
+let armTimer;
+async function redownload() {
+  const m = G.m, btn = $("#redl"), label = btn.querySelector("span");
+  if (m.present && btn.dataset.armed !== "1") {  // files exist: ask once more before replacing them
+    btn.dataset.armed = "1"; btn.classList.add("armed"); label.textContent = "Click again to replace the files";
+    clearTimeout(armTimer);
+    armTimer = setTimeout(() => { btn.dataset.armed = "0"; btn.classList.remove("armed"); label.textContent = "Redownload"; }, 4000);
+    return;
+  }
+  clearTimeout(armTimer);
+  btn.disabled = true; btn.classList.remove("armed"); label.textContent = "Starting...";
+  try {
+    await api("library_redownload", {id: m.id, force: !!m.present});
+    label.textContent = "Download started";
+    const note = $("#redlNote");
+    note.innerHTML = `Downloading into the saved folder. <a href="/">Follow it in the downloader</a>.`;
+    note.hidden = false;
+  } catch (e) {
+    btn.disabled = false; btn.dataset.armed = "0"; label.textContent = m.present ? "Redownload" : "Download again";
+    toast(e.message);
+  }
+}
+
 /* ---------- events ---------- */
 const grid = $("#grid");
 grid.addEventListener("click", e => { const c = e.target.closest(".card"); if (c) openSheet(c.dataset.id, c); });
@@ -519,6 +549,7 @@ $("#scrim").addEventListener("click", e => {
   if (t.closest("#stage")) return openLightbox();
   const cp = t.closest("[data-copy]"); if (cp) return copyText(cp.dataset.copy);
   if (t.closest("#reveal")) api("library_open", {id: G.m.id}).catch(err => toast(err.message));
+  if (t.closest("#redl")) redownload();
 });
 $("#lb").addEventListener("click", e => {
   if (e.target.closest("#lbPrev")) return setImage(G.i - 1);

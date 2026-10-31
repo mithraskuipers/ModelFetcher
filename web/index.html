@@ -690,11 +690,11 @@ function renderJobs(list) {
     let line = "", cls = "", hint = "";
     if (j.status === "running") line = `${fmt(j.done)} of ${fmt(j.total)} (${pct.toFixed(0)}%)` + (j.speed ? ` | ${fmt(j.speed)}/s` : "") + (j.eta != null ? ` | ${fmtEta(j.eta)}` : "");
     else if (j.status === "done") { line = `Finished: ${j.nfiles} file${j.nfiles > 1 ? "s" : ""}, ${fmt(j.total)}`; cls = "done"; hint = DONE_HINT[jobKinds[j.id]] ? info("Done. What now?", `<p>${DONE_HINT[jobKinds[j.id]]}</p>`, "ok") : ""; }
-    else if (j.status === "cancelled") line = "Cancelled. Start it again to resume where it stopped.";
+    else if (j.status === "cancelled") line = "Cancelled. Press Resume to continue where it stopped.";
     else { line = esc(j.error || "Failed"); cls = "bad"; }
     const acts = j.status === "running"
       ? `<button class="btn small danger" data-a="cancel" data-id="${j.id}">Cancel</button>`
-      : `<button class="btn small" data-a="open" data-id="${j.id}" data-p="${esc(j.target)}">Open folder</button><button class="btn small" data-a="remove" data-id="${j.id}">Remove</button>`;
+      : `${j.status === "done" ? "" : `<button class="btn small primary" data-a="retry" data-id="${j.id}">${j.status === "cancelled" ? "Resume" : "Retry"}</button>`}<button class="btn small" data-a="open" data-id="${j.id}" data-p="${esc(j.target)}">Open folder</button><button class="btn small" data-a="remove" data-id="${j.id}">Remove</button>`;
     return `<div class="job"><div class="top"><b>${esc(j.repo_id)}</b>${acts}</div>
       <div class="track"><div class="fill ${cls}" style="width:${pct}%"></div></div>
       <div class="muted">${line}</div>${j.note ? `<div class="muted">${esc(j.note)}</div>` : ""}<div class="muted">${esc(j.target)}</div>${hint}</div>`;
@@ -705,6 +705,7 @@ $("#jobs").onclick = async e => {
   const a = e.target.dataset.a; if (!a) return;
   try {
     if (a === "cancel") await api("cancel", {id: e.target.dataset.id});
+    if (a === "retry") await api("retry", {id: e.target.dataset.id});
     if (a === "remove") await api("remove_job", {id: e.target.dataset.id});
     if (a === "open") await api("open", {path: e.target.dataset.p});
     refreshJobs();

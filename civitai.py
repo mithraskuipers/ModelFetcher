@@ -8,10 +8,12 @@ How a Civitai link maps to a download:
   download:  https://civitai.com/api/download/models/<versionId>?fileId=<fileId>
 """
 import hashlib
+import http.client
 import json
 import os
 import re
 import shutil
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -33,6 +35,14 @@ URL_EXT = {".jpg": ".jpeg", ".jpeg": ".jpeg", ".png": ".png", ".webp": ".webp", 
 
 class AuthError(Exception):
     pass
+
+
+class NetworkError(ValueError):
+    """A problem that is likely to go away by itself (dropped connection, Civitai busy). download_all retries these."""
+
+
+MAX_TRIES = 4  # per file; waits 2, 4 and 8 seconds in between
+RETRY_CODES = (429, 500, 502, 503, 504)
 
 
 def host_ok(host):
@@ -218,25 +228,35 @@ def open_follow(url, key, start=0):
     raise ValueError("Too many redirects from Civitai.")
 
 
+def _net(fn, *args):
+    """Run a network call; turn dropped connections and timeouts into NetworkError (HTTP errors pass through)."""
+    try:
+        return fn(*args)
+    except urllib.error.HTTPError:
+        raise
+    except (OSError, http.client.HTTPException) as e:
+        raise NetworkError(f"Connection lost ({getattr(e, 'reason', None) or e}). Press Retry to resume.")
+
+
 def _need_key():
     return AuthError("Civitai wants you logged in for this file. Add a Civitai API key in Settings "
                      "(some files also need early access or an accepted license on the model page).")
 
 
-def _download_one(url, final, expected, sha256, key, on_bytes):
-    if final.is_file() and expected and abs(final.stat().st_size - expected) <= 1024:
+def _download_one(url, final, expected, sha256, key, on_bytes, force=False):
+    if not force and final.is_file() and expected and abs(final.stat().st_size - expected) <= 1024:
         on_bytes(final.stat().st_size)  # already downloaded
         return
     part = final.with_name(final.name + ".part")
     existing = part.stat().st_size if part.exists() else 0
     try:
         try:
-            resp = open_follow(url, key, existing)
+            resp = _net(open_follow, url, key, existing)
         except urllib.error.HTTPError as e:
             if e.code == 416 and existing:  # stale partial file
                 part.unlink()
                 existing = 0
-                resp = open_follow(url, key, 0)
+                resp = _net(open_follow, url, key, 0)
             else:
                 raise
         with resp:
@@ -252,7 +272,7 @@ def _download_one(url, final, expected, sha256, key, on_bytes):
                 on_bytes(existing)
             with open(part, "ab" if resume else "wb") as out:
                 while True:
-                    block = resp.read(CHUNK)
+                    block = _net(resp.read, CHUNK)
                     if not block:
                         break
                     out.write(block)
@@ -264,21 +284,47 @@ def _download_one(url, final, expected, sha256, key, on_bytes):
             raise _need_key()
         if e.code == 404:
             raise ValueError("Civitai could not find that file. It may have been removed.")
+        if e.code in RETRY_CODES:
+            raise NetworkError(f"Civitai is busy right now (HTTP {e.code}). Press Retry to resume.")
         raise ValueError(f"Civitai answered with HTTP {e.code}.")
     except urllib.error.URLError as e:
-        raise ValueError(f"Network problem: {e.reason}. Start it again to resume.")
+        raise NetworkError(f"Network problem: {e.reason}. Press Retry to resume.")
     if hasher and hasher.hexdigest() != sha256:
         part.unlink(missing_ok=True)
-        raise ValueError("The downloaded file does not match Civitai's checksum. Start it again.")
+        raise ValueError("The downloaded file does not match Civitai's checksum. Press Retry to download it again.")
     os.replace(part, final)
 
 
 def download_all(spec, key, on_bytes):
+    """Download every file. Dropped connections are retried (resuming the partial file).
+
+    With spec["force"] an existing finished file is downloaded again; it is only replaced
+    once the new copy is complete (and matches its checksum).
+    """
     dest = Path(spec["local_dir"])
     dest.mkdir(parents=True, exist_ok=True)
+    force = bool(spec.get("force"))
     for f in spec["files"]:
-        _download_one(download_url(spec["host"], spec["version_id"], f["id"]), dest / f["name"],
-                      f.get("size") or 0, f.get("sha256"), key, on_bytes)
+        final = dest / f["name"]
+        url = download_url(spec["host"], spec["version_id"], f["id"])
+        if force:
+            final.with_name(final.name + ".part").unlink(missing_ok=True)  # fresh copy, not a resume of an old one
+        counted = [0]
+
+        def count(n, c=counted):
+            c[0] += n
+            on_bytes(n)
+
+        for attempt in range(1, MAX_TRIES + 1):
+            try:
+                _download_one(url, final, f.get("size") or 0, f.get("sha256"), key, count, force)
+                break
+            except NetworkError:
+                if attempt == MAX_TRIES:
+                    raise
+                on_bytes(-counted[0])  # the next attempt counts the resumed part again
+                counted[0] = 0
+                time.sleep(2 ** attempt)
 
 
 def preview_url(url):

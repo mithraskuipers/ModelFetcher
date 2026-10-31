@@ -216,8 +216,21 @@ def esc_pattern(name):
     return name.replace("[", "[[]").replace("*", "[*]").replace("?", "[?]")
 
 
+def already_running(target, names, skip=None):
+    """True if a running download writes any of these files into the same folder (two workers must not share a .part file)."""
+    names = set(names)
+    with LOCK:
+        return any(j is not skip and j["status"] == "running" and j["target"] == str(target) and names & {n for n, _ in j["files"]}
+                   for j in JOBS.values())
+
+
 def launch_job(label, target, files, spec, entry=None):
-    target.mkdir(parents=True, exist_ok=True)
+    if already_running(target, [n for n, _ in files]):
+        raise ApiError("This model is already downloading to that folder.")
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise ApiError(f"Cannot create the folder {target}: {e}")
     job_id = secrets.token_hex(4)
     tmp = tempfile.mkdtemp(prefix="mfetcher_")
     spec = dict(spec, local_dir=str(target), progress_file=os.path.join(tmp, "progress.json"))
@@ -257,7 +270,7 @@ def civitai_meta(host, version_id, url):
         return {}
 
 
-def start_civitai_download(data):
+def start_civitai_download(data, target=None, force=False):
     host = str(data.get("host", ""))
     if not civitai.host_ok(host):
         raise ApiError("Invalid Civitai address.")
@@ -272,23 +285,24 @@ def start_civitai_download(data):
         raise ApiError("Invalid file list.")
     if not files:
         raise ApiError("Select at least one file.")
-    dest = current_dest()
-    if not dest:
-        raise ApiError("Choose a destination folder first.")
     label = str(data.get("repo_id") or "Civitai model")
-    folder = "".join(c if (c.isalnum() or c in "._-") else "_" for c in str(data.get("folder") or label))[:80] or "civitai-model"
-    target = Path(dest) / folder if data.get("subfolder") else Path(dest)
+    if target is None:
+        dest = current_dest()
+        if not dest:
+            raise ApiError("Choose a destination folder first.")
+        folder = "".join(c if (c.isalnum() or c in "._-") else "_" for c in str(data.get("folder") or label))[:80] or "civitai-model"
+        target = Path(dest) / folder if data.get("subfolder") else Path(dest)
     url = str(data.get("url") or "").strip()[:2000]
     meta = civitai_meta(host, version_id, url)
     if meta.get("version_id") != version_id:
-        raise ApiError("Could not read this model's details from Civitai. Look it up again, then download.")
+        raise ApiError("Could not read this model's details from Civitai. Check your connection and Civitai key, then try again.")
     model_type = library.norm_type(data.get("model_type")) or library.guess_type(meta.get("repo_type"))
     try:
         library.ensure()
     except OSError as e:
         raise ApiError(f"Cannot use the library folder: {e}")
     entry = library.civitai_entry(url, meta, model_type, files, target)
-    spec = {"source": "civitai", "host": host, "version_id": version_id, "files": files}
+    spec = {"source": "civitai", "host": host, "version_id": version_id, "files": files, "force": bool(force)}
     images = [i for i in meta.get("images") or [] if i.get("url")]
     if images:
         name = library.preview_dir_name(meta.get("folder"), meta["model_id"], meta["version_id"])
@@ -452,6 +466,42 @@ def cancel_job(data):
     return {}
 
 
+def retry_job(data):
+    """Run a failed or cancelled download again. Partial files are resumed, finished files are kept."""
+    with LOCK:
+        job = JOBS.get(str(data.get("id")))
+    if not job:
+        raise ApiError("Unknown download.")
+    if job["status"] not in ("error", "cancelled"):
+        raise ApiError("Only failed or cancelled downloads can be retried.")
+    if already_running(job["target"], [n for n, _ in job["files"]], skip=job):
+        raise ApiError("The same files are already downloading.")
+    try:
+        os.remove(job["spec"]["progress_file"])  # old progress would make the bar jump
+    except OSError:
+        pass
+    job.update(status="running", error="", note="", cancel=False, speed=0.0, proc=None)
+    threading.Thread(target=run_job, args=(job,), daemon=True).start()
+    return {}
+
+
+def library_redownload(data):
+    """Download a library model again into its saved folder. With force, finished files are replaced by a fresh copy."""
+    entry = next((m for m in library.load()["models"] if m.get("id") == data.get("id")), None)
+    if not entry or entry.get("source") != "civitai":
+        raise ApiError("Only Civitai models in the library can be downloaded again.")
+    host = urlparse(entry.get("page_url") or entry.get("url") or "").netloc.lower()
+    host = host[4:] if host.startswith("www.") else host
+    payload = {
+        "source": "civitai", "host": host, "version_id": entry.get("version_id"), "repo_id": entry.get("name"),
+        "url": entry.get("url"), "model_type": entry.get("model_type"),
+        "files": [{"id": f.get("id"), "name": f.get("name"), "size": f.get("size"), "sha256": f.get("sha256")} for f in entry.get("files") or []],
+    }
+    if not entry.get("local_dir"):
+        raise ApiError("This entry has no saved folder.")
+    return start_civitai_download(payload, target=Path(entry["local_dir"]), force=bool(data.get("force")))
+
+
 def remove_job(data):
     with LOCK:
         job = JOBS.get(str(data.get("id")))
@@ -552,6 +602,7 @@ def quit_app(_data=None):
 
 ROUTES = {
     ("GET", "state"): state, ("GET", "jobs"): jobs_list, ("GET", "library"): library_list, ("POST", "library_open"): library_open,
+    ("POST", "retry"): retry_job, ("POST", "library_redownload"): library_redownload,
     ("POST", "set_dest"): set_dest, ("POST", "browse"): browse, ("POST", "inspect"): inspect_repo,
     ("POST", "download"): start_download, ("POST", "cancel"): cancel_job, ("POST", "remove_job"): remove_job,
     ("POST", "open"): open_folder, ("POST", "token"): save_token, ("POST", "remove_token"): remove_token,
