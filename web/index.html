@@ -133,6 +133,11 @@ a{color:var(--accent)}
 .opt.active .inuse{display:inline-flex}
 .path.active{border-style:solid;border-color:var(--accent)}
 
+/* civitai model type box */
+.typebox{margin-top:12px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--field)}
+.typebox select{border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:10px;padding:9px 12px;font:inherit;min-width:170px}
+.typebox .inputrow{margin:8px 0 6px}
+
 /* look-up icon button */
 .iconbtn{flex:none;width:46px;padding:0;justify-content:center}
 .iconbtn svg{width:22px;height:22px}
@@ -210,6 +215,14 @@ a{color:var(--accent)}
     <div class="step"><span class="num">3</span><h2>Check the files</h2></div>
     <div class="repohead" id="repoHead"></div>
     <div id="kindInfo"></div>
+    <div class="typebox" id="civOpts" hidden>
+      <b>What kind of model is this?</b>
+      <div class="inputrow">
+        <select id="modelType" aria-label="Model type"></select>
+        <input type="text" id="modelTypeCustom" placeholder="Type your own, e.g. wildcard" spellcheck="false" hidden>
+      </div>
+      <div class="muted">Preselected from Civitai, change it if you like. It is saved together with the full link in your private library (<code>library/library.json</code>), along with <b id="prevCount">0</b> preview images in their own folder. That folder is git-ignored and never committed.</div>
+    </div>
     <div class="picks" id="picks" hidden></div>
     <div class="toolbar">
       <input type="text" id="filter" placeholder="Filter the list (example: Q4_K_M or *.safetensors)" spellcheck="false">
@@ -271,7 +284,7 @@ a{color:var(--accent)}
 <script>
 const SESSION = "__SESSION__";
 const $ = s => document.querySelector(s);
-let S = {}, repo = null, selected = new Set(), pendingRetry = false;
+let S = {}, repo = null, selected = new Set(), pendingRetry = false, lastType = null;
 const jobKinds = {};
 
 async function api(name, body) {
@@ -467,7 +480,7 @@ async function lookup(versionId) {
     } else setMsg(esc(r.message), "err");
     return;
   }
-  repo = r; repo.kind = detectKind(r.files, r.repo_type, r.source);
+  repo = r; repo.query = q; repo.kind = detectKind(r.files, r.repo_type, r.source);
   if (repo.kind === "gguf") repo.files.sort((a, b) => a.size - b.size || a.name.localeCompare(b.name));
   $("#filter").value = "";
   const wanted = r.filename && r.files.find(f => f.name === r.filename || f.name.split("/").pop().toLowerCase() === r.filename.toLowerCase());
@@ -540,6 +553,7 @@ function renderRepo() {
     (repo.gated ? '<span class="badge warn">gated</span>' : "") + (repo.private ? '<span class="badge warn">private</span>' : "") +
     `<span class="muted">${repo.files.length} files, ${fmt(total)} total</span>`;
   $("#kindInfo").innerHTML = KIND_TEXT[repo.kind]();
+  setupTypeBox();
   $("#subName").textContent = "'" + folderName() + "'";
   const tags = {}, exts = {};
   repo.files.forEach(f => {
@@ -550,6 +564,36 @@ function renderRepo() {
   const all = [...Object.keys(tags).slice(0, 10), ...top];
   $("#tagChips").innerHTML = all.length ? '<span class="muted">Quick filter:</span>' + all.map(t => `<button class="chip tg">${esc(t)}</button>`).join("") : "";
 }
+/* ---------- civitai model type ---------- */
+const TYPE_OPTIONS = [["lora", "LoRA"], ["checkpoint", "Checkpoint"], ["embedding", "Embedding"], ["vae", "VAE"],
+  ["controlnet", "ControlNet"], ["upscaler", "Upscaler"], ["hypernetwork", "Hypernetwork"], ["other", "Other..."]];
+const CIV_TYPES = {lora: "lora", locon: "lora", dora: "lora", checkpoint: "checkpoint", textualinversion: "embedding", embedding: "embedding",
+  vae: "vae", controlnet: "controlnet", upscaler: "upscaler", hypernetwork: "hypernetwork"};
+$("#modelType").innerHTML = TYPE_OPTIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+function slugType(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32); }
+function guessType(t) { return CIV_TYPES[String(t || "").toLowerCase().replace(/[^a-z]/g, "")] || slugType(t) || "other"; }
+function currentType() {
+  const v = $("#modelType").value;
+  return v === "other" ? (slugType($("#modelTypeCustom").value) || "other") : v;
+}
+function setTypeUI(value) {
+  const known = value !== "other" && TYPE_OPTIONS.some(o => o[0] === value);
+  $("#modelType").value = known ? value : "other";
+  $("#modelTypeCustom").hidden = known;
+  $("#modelTypeCustom").value = known || value === "other" ? "" : value;
+}
+function rememberType() { if (repo) lastType = {model_id: repo.model_id, value: currentType()}; }
+function setupTypeBox() {
+  const on = repo.source === "civitai";
+  $("#civOpts").hidden = !on;
+  if (!on) return;
+  const keep = lastType && lastType.model_id === repo.model_id ? lastType.value : null;  // survives a version change
+  setTypeUI(keep || guessType(repo.repo_type));
+  $("#prevCount").textContent = (repo.images || []).length;
+}
+$("#modelType").onchange = () => { $("#modelTypeCustom").hidden = $("#modelType").value !== "other"; rememberType(); };
+$("#modelTypeCustom").oninput = rememberType;
+
 function safeName(id) { return id.split("/").pop().replace(/[^A-Za-z0-9._-]/g, "_"); }
 function folderName() { return safeName(repo.source === "civitai" ? (repo.folder || repo.repo_id) : repo.repo_id).slice(0, 80); }
 function renderPicks() {
@@ -622,7 +666,8 @@ $("#btnDownload").onclick = async () => {
   const files = repo.files.filter(f => selected.has(f.name));
   try {
     const r = await api("download", repo.source === "civitai"
-      ? {source: "civitai", host: repo.host, version_id: repo.version_id, repo_id: repo.repo_id, folder: repo.folder, files, subfolder: $("#sub").checked}
+      ? {source: "civitai", host: repo.host, version_id: repo.version_id, repo_id: repo.repo_id, folder: repo.folder, files, subfolder: $("#sub").checked,
+         url: repo.query, model_type: currentType()}
       : {repo_id: repo.repo_id, repo_type: repo.repo_type, revision: repo.revision, files,
          all: files.length === repo.files.length, subfolder: $("#sub").checked});
     jobKinds[r.id] = repo.kind;
@@ -651,7 +696,7 @@ function renderJobs(list) {
       : `<button class="btn small" data-a="open" data-id="${j.id}" data-p="${esc(j.target)}">Open folder</button><button class="btn small" data-a="remove" data-id="${j.id}">Remove</button>`;
     return `<div class="job"><div class="top"><b>${esc(j.repo_id)}</b>${acts}</div>
       <div class="track"><div class="fill ${cls}" style="width:${pct}%"></div></div>
-      <div class="muted">${line}</div><div class="muted">${esc(j.target)}</div>${hint}</div>`;
+      <div class="muted">${line}</div>${j.note ? `<div class="muted">${esc(j.note)}</div>` : ""}<div class="muted">${esc(j.target)}</div>${hint}</div>`;
   }).join("");
 }
 async function refreshJobs() { try { renderJobs(await api("jobs")); } catch (e) {} }

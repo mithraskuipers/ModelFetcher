@@ -9,6 +9,14 @@ downloads/
 .cache/
 .huggingface/
 
+# Private model library: download history, full links, model types and preview images.
+# Never commit. Written by the tool into library/ (which also contains its own "*" .gitignore).
+library/
+library.json
+library.broken.json
+previews/
+civitai-previews__*/
+
 # Tokens, secrets, local state (the tool keeps these outside the repo anyway)
 .env
 .env.*

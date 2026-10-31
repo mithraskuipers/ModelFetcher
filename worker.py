@@ -34,7 +34,16 @@ def run_civitai(spec):
     try:
         civitai.download_all(spec, os.environ.get("CIVITAI_API_KEY"), on_bytes)
         write(True)
-        print(json.dumps({"ok": True}))
+        previews = None
+        if spec.get("preview_dir") and spec.get("images_file"):
+            # Previews are a bonus: whatever goes wrong here, the model download still counts as done.
+            try:
+                with open(spec["images_file"], encoding="utf-8") as f:
+                    images = json.load(f)
+                previews = civitai.download_previews(images, spec["preview_dir"])
+            except Exception:
+                previews = {"saved": [], "failed": 0, "error": True}
+        print(json.dumps({"ok": True, "previews": previews}))
     except Exception as e:
         print(json.dumps({"ok": False, "error": str(e) or type(e).__name__}))
         sys.exit(1)

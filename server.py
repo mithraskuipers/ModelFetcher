@@ -31,11 +31,13 @@ from core import (
 )
 
 import civitai
+import library
 
 WEB_DIR = REPO_DIR / "web"
 SESSION = secrets.token_urlsafe(24)
 CONFIG = load_config()
 JOBS = {}
+LOOKUPS = {}  # recent Civitai lookups, so a download can reuse the model details and image list
 LOCK = threading.Lock()
 PORT = 0
 SERVER = None
@@ -153,7 +155,11 @@ def inspect_civitai(data):
     query = str(data.get("query", ""))
     key = CONFIG.get("civitai_key")
     try:
-        return civitai.lookup(query, key, data.get("version_id"))
+        result = civitai.lookup(query, key, data.get("version_id"))
+        LOOKUPS[(result["host"], result["version_id"])] = result
+        while len(LOOKUPS) > 20:
+            LOOKUPS.pop(next(iter(LOOKUPS)))
+        return result
     except civitai.AuthError as e:
         try:
             p = civitai.parse_url(query)
@@ -209,15 +215,22 @@ def esc_pattern(name):
     return name.replace("[", "[[]").replace("*", "[*]").replace("?", "[?]")
 
 
-def launch_job(label, target, files, spec):
+def launch_job(label, target, files, spec, entry=None):
     target.mkdir(parents=True, exist_ok=True)
     job_id = secrets.token_hex(4)
     tmp = tempfile.mkdtemp(prefix="mfetcher_")
     spec = dict(spec, local_dir=str(target), progress_file=os.path.join(tmp, "progress.json"))
+    images = spec.pop("images", None)
+    if images:  # a long image list does not fit on the command line, so the worker reads it from a file
+        images_file = os.path.join(tmp, "images.json")
+        with open(images_file, "w", encoding="utf-8") as f:
+            json.dump(images, f)
+        spec["images_file"] = images_file
     job = {
         "id": job_id, "repo_id": label, "target": str(target), "files": files,
         "total": sum(s for _, s in files), "done": 0, "speed": 0.0, "status": "running",
         "error": "", "started": time.time(), "tmp": tmp, "spec": spec, "proc": None, "cancel": False,
+        "entry": entry, "note": "",
     }
     with LOCK:
         JOBS[job_id] = job
@@ -230,6 +243,17 @@ def job_env(job):
     if job["spec"].get("source") == "civitai" and CONFIG.get("civitai_key"):
         env["CIVITAI_API_KEY"] = CONFIG["civitai_key"]  # via environment, not the command line
     return env
+
+
+def civitai_meta(host, version_id, url):
+    """Model details for a download: the cached lookup, or a fresh one if the cache lost it."""
+    meta = LOOKUPS.get((host, version_id))
+    if meta:
+        return meta
+    try:
+        return civitai.lookup(url, CONFIG.get("civitai_key"), version_id)
+    except Exception:
+        return {}
 
 
 def start_civitai_download(data):
@@ -253,8 +277,23 @@ def start_civitai_download(data):
     label = str(data.get("repo_id") or "Civitai model")
     folder = "".join(c if (c.isalnum() or c in "._-") else "_" for c in str(data.get("folder") or label))[:80] or "civitai-model"
     target = Path(dest) / folder if data.get("subfolder") else Path(dest)
-    return launch_job(label, target, [(f["name"], f["size"]) for f in files],
-                      {"source": "civitai", "host": host, "version_id": version_id, "files": files})
+    url = str(data.get("url") or "").strip()[:2000]
+    meta = civitai_meta(host, version_id, url)
+    if meta.get("version_id") != version_id:
+        raise ApiError("Could not read this model's details from Civitai. Look it up again, then download.")
+    model_type = library.norm_type(data.get("model_type")) or library.guess_type(meta.get("repo_type"))
+    try:
+        library.ensure()
+    except OSError as e:
+        raise ApiError(f"Cannot use the library folder: {e}")
+    entry = library.civitai_entry(url, meta, model_type, files, target)
+    spec = {"source": "civitai", "host": host, "version_id": version_id, "files": files}
+    images = [i for i in meta.get("images") or [] if i.get("url")]
+    if images:
+        name = library.preview_dir_name(meta.get("folder"), meta["model_id"], meta["version_id"])
+        spec["images"] = images
+        spec["preview_dir"] = str(library.PREVIEWS_DIR / name)
+    return launch_job(label, target, [(f["name"], f["size"]) for f in files], spec, entry)
 
 
 def start_download(data):
@@ -319,6 +358,29 @@ def completed_bytes(job):
     return total
 
 
+def record_library(job, result):
+    """After a successful Civitai download: write the model (and its saved previews) into library.json."""
+    entry, preview_dir = job["entry"], job["spec"].get("preview_dir")
+    parts = []
+    if preview_dir:
+        prev = result.get("previews") or {}
+        saved = [str(n) for n in prev.get("saved") or []]
+        entry["previews"] = {"dir": "previews/" + Path(preview_dir).name, "count": len(saved), "files": saved}
+        if prev.get("error"):
+            parts.append("preview images could not be downloaded")
+        else:
+            parts.append(f"{len(saved)} preview image{'' if len(saved) == 1 else 's'} saved")
+            if prev.get("failed"):
+                parts.append(f"{prev['failed']} failed")
+    try:
+        library.upsert(entry)
+        parts.append(f"added to library as '{entry['model_type']}'")
+    except OSError as e:
+        parts.append(f"could not update the library file ({e})")
+    note = ", ".join(parts)
+    job["note"] = note[:1].upper() + note[1:]
+
+
 def run_job(job):
     out = []
     try:
@@ -359,6 +421,8 @@ def run_job(job):
     if proc.returncode == 0 and result.get("ok"):
         job["done"] = job["total"]
         job["status"] = "done"
+        if job.get("entry"):
+            record_library(job, result)
     else:
         job["status"] = "error"
         job["error"] = result.get("error") or "Download failed."
@@ -374,7 +438,7 @@ def jobs_list(_data=None):
             rows.append({
                 "id": j["id"], "repo_id": j["repo_id"], "target": j["target"], "status": j["status"],
                 "error": j["error"], "done": j["done"], "total": j["total"], "speed": j["speed"],
-                "eta": eta, "nfiles": len(j["files"]), "started": j["started"],
+                "eta": eta, "nfiles": len(j["files"]), "started": j["started"], "note": j.get("note", ""),
             })
     return sorted(rows, key=lambda r: -r["started"])
 

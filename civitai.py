@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -20,6 +21,14 @@ HOSTS = ["civitai.com", "civitai.red", "civitai.green"]
 SCHEME = "https"
 UA = "ModelFetcher/1.0"
 CHUNK = 1024 * 1024
+# Same transform the Civitai web page uses for its gallery thumbnails.
+PREVIEW_PARAMS = "anim=false,width=800,optimized=true"
+MEDIA_EXT = {
+    "image/jpeg": ".jpeg", "image/jpg": ".jpeg", "image/png": ".png", "image/webp": ".webp",
+    "image/gif": ".gif", "image/avif": ".avif", "video/mp4": ".mp4", "video/webm": ".webm",
+}
+URL_EXT = {".jpg": ".jpeg", ".jpeg": ".jpeg", ".png": ".png", ".webp": ".webp", ".gif": ".gif",
+           ".avif": ".avif", ".mp4": ".mp4", ".webm": ".webm"}
 
 
 class AuthError(Exception):
@@ -143,6 +152,8 @@ def lookup(text, key=None, version_override=None):
         })
     if not files:
         raise ValueError("This version has no files.")
+    images = [{"url": im["url"], "type": im.get("type") or "image", "width": im.get("width"), "height": im.get("height")}
+              for im in (chosen.get("images") or []) if isinstance(im, dict) and im.get("url")]
     name = m.get("name") or f"model-{spec['model_id']}"
     return {
         "ok": True, "source": "civitai", "host": host,
@@ -153,7 +164,7 @@ def lookup(text, key=None, version_override=None):
         "base_model": chosen.get("baseModel"), "trigger_words": chosen.get("trainedWords") or [],
         "early_access": bool(chosen.get("earlyAccessEndsAt")),
         "versions": [{"id": v.get("id"), "name": v.get("name"), "base_model": v.get("baseModel")} for v in versions],
-        "selected_file_id": spec["file_id"], "files": files,
+        "selected_file_id": spec["file_id"], "files": files, "images": images,
     }
 
 
@@ -244,3 +255,52 @@ def download_all(spec, key, on_bytes):
     for f in spec["files"]:
         _download_one(download_url(spec["host"], spec["version_id"], f["id"]), dest / f["name"],
                       f.get("size") or 0, f.get("sha256"), key, on_bytes)
+
+
+def preview_url(url):
+    """Rewrite a gallery image URL to the 800px preview version (the transform sits before the file name)."""
+    u = urlparse(url)
+    segs = u.path.split("/")
+    if len(segs) >= 2 and "=" in segs[-2]:
+        segs[-2] = PREVIEW_PARAMS
+    else:
+        segs.insert(len(segs) - 1, PREVIEW_PARAMS)
+    return u._replace(path="/".join(segs), query="", fragment="").geturl()
+
+
+def download_previews(images, dest):
+    """Download every preview image into `dest`. Best effort: one bad image never stops the rest.
+
+    Files are named 01_<original-name>.<ext>, 02_..., in the order of the Civitai gallery.
+    Already downloaded images are kept, so running it again only fills the gaps.
+    Returns {"saved": [file names], "failed": count}.
+    """
+    dest = Path(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+    have = {p.stem: p.name for p in dest.iterdir() if p.is_file() and p.suffix != ".part"}
+    saved, failed = [], 0
+    for i, img in enumerate(images, 1):
+        url = str((img or {}).get("url") or "")
+        u = urlparse(url)
+        if u.scheme != "https" or not host_ok(u.netloc):
+            failed += 1
+            continue
+        stem = f"{i:02d}_" + (clean_name(os.path.splitext(os.path.basename(u.path))[0])[:60] or "image")
+        if stem in have:
+            saved.append(have[stem])
+            continue
+        part = dest / (stem + ".part")
+        try:
+            with urllib.request.urlopen(urllib.request.Request(preview_url(url), headers={"User-Agent": UA}), timeout=60) as r:
+                ext = MEDIA_EXT.get(r.headers.get_content_type()) or URL_EXT.get(os.path.splitext(u.path)[1].lower())
+                if not ext:
+                    raise ValueError("not an image")
+                with open(part, "wb") as out:
+                    shutil.copyfileobj(r, out, CHUNK)
+            final = dest / (stem + ext)
+            os.replace(part, final)
+            saved.append(final.name)
+        except (urllib.error.URLError, OSError, ValueError):
+            part.unlink(missing_ok=True)
+            failed += 1
+    return {"saved": saved, "failed": failed}
