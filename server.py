@@ -44,12 +44,13 @@ PORT = 0
 SERVER = None
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 _who = {}
+library.resolve(CONFIG.get("library_dir"))  # remembered library folder, else the default one
 
 DIALOG_CODE = (
     "import sys, tkinter as tk\n"
     "from tkinter import filedialog\n"
     "r = tk.Tk(); r.withdraw(); r.attributes('-topmost', True)\n"
-    "p = filedialog.askdirectory(title='Select destination folder', initialdir=sys.argv[1] or None)\n"
+    "p = filedialog.askdirectory(title=sys.argv[2] if len(sys.argv) > 2 else 'Select destination folder', initialdir=sys.argv[1] or None)\n"
     "print(p or '')\n"
 )
 
@@ -138,10 +139,19 @@ def set_dest(data):
 
 
 def browse(data):
-    initial = CONFIG.get("last_dir") or str(Path.home())
+    what = data.get("what")
+    if what == "library":  # the library page: pick the folder that holds library.json
+        initial = CONFIG.get("library_dir") or str(Path.home())
+        title = "Select the library folder (the one that contains library.json)"
+    elif what == "models":  # the library page: pick the folder the model files were moved to
+        initial = CONFIG.get("last_dir") or str(Path.home())
+        title = "Select the folder that now contains your models"
+    else:
+        initial = CONFIG.get("last_dir") or str(Path.home())
+        title = "Select destination folder"
     try:
         out = subprocess.run(
-            [sys.executable, "-c", DIALOG_CODE, initial],
+            [sys.executable, "-c", DIALOG_CODE, initial, title],
             capture_output=True, text=True, timeout=900, creationflags=NO_WINDOW,
         )
     except Exception:
@@ -588,12 +598,85 @@ def show_in_explorer(path):
         subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", path])
 
 
+def library_location(_data=None):
+    """Where the library is being read from, and whether one was found there."""
+    remembered = CONFIG.get("library_dir")
+    return {
+        "dir": str(library.LIBRARY_DIR),
+        "found": library.has_library(library.LIBRARY_DIR),
+        "default": str(library.DEFAULT_DIR),
+        "remembered": remembered,
+        "remembered_missing": bool(remembered) and not library.has_library(remembered),
+    }
+
+
 def library_list(_data=None):
     """Everything the library page needs. `present` says whether the model files are still on disk."""
     models = library.load()["models"]
     for m in models:
         m["present"] = entry_present(m)
-    return {"models": models}
+    return {"models": models, "location": library_location()}
+
+
+def library_locate(data):
+    """Point the tool at an existing library folder (picked with the folder window or typed) and remember it."""
+    found = library.find_in(data.get("path", ""))
+    if not found:
+        raise ApiError("No library found there. Pick the folder that contains library.json (usually named 'library').")
+    library.use(found)
+    CONFIG["library_dir"] = str(found)
+    save_config(CONFIG)
+    return library_list()
+
+
+def scan_for_files(root, wanted, max_depth=6):
+    """{folder: {file name: size}} for every file under `root` whose name is in `wanted`. One walk, hidden folders skipped."""
+    found = {}
+    base = len(Path(root).parts)
+    for cur, dirs, files in os.walk(root):
+        if len(Path(cur).parts) - base >= max_depth:
+            dirs[:] = []
+        else:
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for name in files:
+            if name in wanted:
+                try:
+                    found.setdefault(cur, {})[name] = os.path.getsize(os.path.join(cur, name))
+                except OSError:
+                    pass
+    return found
+
+
+def library_relocate(data):
+    """After moving model files: search a folder and re-point every library entry whose files are missing.
+
+    An entry matches a folder when all its file names are there with the saved sizes. Matches are never guessed:
+    if several folders fit, the old folder name decides, and if that does not settle it the entry is skipped.
+    """
+    root = Path(os.path.expandvars(str(data.get("path", "")).strip().strip('"'))).expanduser()
+    if not str(data.get("path", "")).strip() or not root.is_dir():
+        raise ApiError("That folder does not exist.")
+    missing = [m for m in library.load()["models"] if not entry_present(m)]
+    wanted = {f["name"] for m in missing for f in m.get("files") or [] if f.get("name")}
+    index = scan_for_files(root, wanted) if wanted else {}
+    changes, ambiguous = {}, 0
+    for m in missing:
+        files = [f for f in m.get("files") or [] if f.get("name")]
+        if not files:
+            continue
+        hits = [d for d, have in index.items()
+                if all(f["name"] in have and (not f.get("size") or abs(have[f["name"]] - f["size"]) <= 1024) for f in files)]
+        if len(hits) > 1:
+            old_name = Path(m.get("local_dir") or "").name
+            hits = [d for d in hits if Path(d).name == old_name] or hits
+        if len(hits) == 1:
+            changes[m["id"]] = hits[0]
+        elif hits:
+            ambiguous += 1
+    fixed = library.set_local_dirs(changes) if changes else 0
+    result = library_list()
+    result.update(fixed=fixed, ambiguous=ambiguous, still_missing=sum(1 for m in result["models"] if not m["present"]))
+    return result
 
 
 def library_open(data):
@@ -661,6 +744,7 @@ def quit_app(_data=None):
 
 ROUTES = {
     ("GET", "state"): state, ("GET", "jobs"): jobs_list, ("GET", "library"): library_list, ("POST", "library_open"): library_open,
+    ("GET", "library_location"): library_location, ("POST", "library_locate"): library_locate, ("POST", "library_relocate"): library_relocate,
     ("POST", "retry"): retry_job, ("POST", "library_redownload"): library_redownload,
     ("POST", "set_dest"): set_dest, ("POST", "browse"): browse, ("POST", "inspect"): inspect_repo,
     ("POST", "download"): start_download, ("POST", "cancel"): cancel_job, ("POST", "remove_job"): remove_job,
@@ -760,6 +844,7 @@ def main():
     print("ModelFetcher is running.")
     print(f"Downloader: {url}")
     print(f"Library:    {url}library")
+    print(f"Library data folder: {library.LIBRARY_DIR}" + ("" if library.has_library(library.LIBRARY_DIR) else " (no library found there yet)"))
     print("Close this window or press Ctrl+C to stop.")
     if "--no-browser" not in sys.argv:
         threading.Timer(0.8, webbrowser.open, args=[url]).start()

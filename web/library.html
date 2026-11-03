@@ -178,6 +178,24 @@ dl.kv dd{margin:0;text-align:right;min-width:0;overflow-wrap:anywhere}
 .hashes .copy{margin:0;padding:3px 9px;background:var(--glass-strong);border:1px solid var(--line);font-size:12px}
 .hashes .copy em{font-style:normal;color:var(--faint);font-family:var(--font)}
 
+/* library location */
+.heroact{display:flex;gap:8px;flex-wrap:wrap}
+button.back{border:0}
+dialog.dlg{border:1px solid var(--edge);border-radius:24px;background:var(--sheet);color:var(--text);padding:24px;width:min(560px,92vw);box-shadow:var(--shadow)}
+dialog.dlg::backdrop{background:rgba(0,0,0,.42)}
+dialog.dlg h2{margin:0 0 6px;font-size:22px;letter-spacing:-.025em}
+dialog.dlg p{margin:6px 0 10px;color:var(--muted);font-size:14px}
+.pathbox{font-family:var(--mono);font-size:12.5px;background:var(--tile);border-radius:12px;padding:10px 12px;overflow-wrap:anywhere}
+.locrow{display:flex;gap:8px;margin-top:10px}
+.locrow input{flex:1;min-width:0;border:0;background:var(--tile);border-radius:12px;padding:9px 12px;outline:none}
+.locrow input:focus-visible{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 45%,transparent)}
+.locmsg{min-height:1.2em;margin:10px 0 0;font-size:13.5px;color:var(--warn)}
+.locbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;justify-content:flex-end}
+.state .acts{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.banner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;border-radius:18px;margin-bottom:18px}
+.banner span{flex:1;min-width:200px;color:var(--warn);font-weight:500}
+.locmsg.ok{color:var(--ok)}
+
 /* lightbox */
 .lb{position:fixed;inset:0;z-index:60;display:grid;place-items:center;background:rgba(0,0,0,.9)}
 .lb img{max-width:min(96vw,1400px);max-height:92dvh;object-fit:contain;border-radius:14px;box-shadow:0 30px 80px rgba(0,0,0,.5)}
@@ -214,7 +232,10 @@ dl.kv dd{margin:0;text-align:right;min-width:0;overflow-wrap:anywhere}
       <h1>Library</h1>
       <p id="subtitle">Loading your models...</p>
     </div>
-    <a class="back glass" href="/"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>Downloader</a>
+    <div class="heroact">
+      <button class="back glass" id="locBtn" type="button" title="Choose which library folder is used"><svg viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 012-2h4l2 2.2h7a2 2 0 012 2v7.3a2 2 0 01-2 2h-13a2 2 0 01-2-2z"/></svg>Library folder</button>
+      <a class="back glass" href="/"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>Downloader</a>
+    </div>
   </div>
 
   <div class="toolbar glass frost" id="toolbar" hidden>
@@ -236,6 +257,11 @@ dl.kv dd{margin:0;text-align:right;min-width:0;overflow-wrap:anywhere}
     </button>
   </div>
 
+  <div class="banner glass" id="missing" hidden>
+    <span id="missingText"></span>
+    <button class="btn quiet" id="relocOpen" type="button">Find moved models...</button>
+  </div>
+
   <div id="grid" class="grid" hidden></div>
   <div id="state"></div>
 </main>
@@ -251,6 +277,30 @@ dl.kv dd{margin:0;text-align:right;min-width:0;overflow-wrap:anywhere}
   <div class="counter" id="lbCount"></div>
 </div>
 <div class="toast glass" id="toast" role="status" aria-live="polite"></div>
+<dialog class="dlg" id="relocDlg" aria-labelledby="rlTitle">
+  <h2 id="rlTitle">Find moved models</h2>
+  <p>Moved your model files? Pick the folder they are in now (or a folder above it). The library searches it, matches files by name and size, and updates every model it finds. Nothing is moved, copied or deleted.</p>
+  <div class="locbtns" style="justify-content:flex-start;margin-top:4px"><button class="btn" id="rlBrowse" type="button">Browse for folder...</button></div>
+  <div class="locrow">
+    <input type="text" id="rlPath" placeholder="Or type a path, e.g. E:\models" spellcheck="false" autocomplete="off">
+    <button class="btn quiet" id="rlUse" type="button">Search</button>
+  </div>
+  <p class="locmsg" id="rlMsg" role="status"></p>
+  <div class="locbtns"><button class="btn quiet" id="rlClose" type="button">Close</button></div>
+</dialog>
+<dialog class="dlg" id="locDlg" aria-labelledby="locTitle">
+  <h2 id="locTitle">Library folder</h2>
+  <p>The library is the folder that contains <b>library.json</b> and the <b>previews</b> folder (by default the <code>library</code> folder next to the program). Pick it if it is somewhere else. It is remembered next time.</p>
+  <div class="pathbox" id="locCur"></div>
+  <p class="locmsg" id="locWarn"></p>
+  <div class="locbtns" style="justify-content:flex-start;margin-top:4px"><button class="btn" id="locBrowse" type="button">Browse for folder...</button></div>
+  <div class="locrow">
+    <input type="text" id="locPath" placeholder="Or type a path, e.g. D:\ModelFetcher\library" spellcheck="false" autocomplete="off">
+    <button class="btn quiet" id="locUse" type="button">Use it</button>
+  </div>
+  <p class="locmsg" id="locMsg" role="alert"></p>
+  <div class="locbtns"><button class="btn quiet" id="locClose" type="button">Close</button></div>
+</dialog>
 
 <script>
 const SESSION = "__SESSION__";
@@ -413,10 +463,18 @@ function render() {
   const pics = S.pics;
   $("#subtitle").textContent = total ? `${total} ${total === 1 ? "model" : "models"} with ${pics} preview ${pics === 1 ? "image" : "images"}` : "Nothing downloaded yet";
   $("#toolbar").hidden = !total;
+  const miss = S.models.filter(m => !m.present).length;
+  $("#missing").hidden = !miss;
+  if (miss) $("#missingText").textContent = `${miss} ${miss === 1 ? "model has" : "models have"} files that were not found. If you moved them, point to the new folder and the library will find them.`;
   const grid = $("#grid"), state = $("#state");
   if (!total) {
     grid.hidden = true;
-    state.innerHTML = `<div class="state glass"><h2>Your library is empty</h2><p>Download a Civitai model and it shows up here with its preview images and stats.</p><a class="btn" href="/">Open the downloader</a></div>`;
+    const l = S.loc || {};
+    const head = l.found ? "Your library is empty" : "No library found";
+    const text = l.found ? "Download a Civitai model and it shows up here with its preview images and stats."
+      : l.remembered_missing ? "The library location you picked earlier could not be found, and there is none in the default folder. Browse to it, or download a Civitai model to start a new one."
+      : "There is no library in the default folder yet. Download a Civitai model to start one, or browse to a library you already have.";
+    state.innerHTML = `<div class="state glass"><h2>${head}</h2><p>${esc(text)}</p><div class="acts"><a class="btn" href="/">Open the downloader</a><button class="btn quiet" data-locate>Find my library...</button></div></div>`;
     return;
   }
   renderSeg();
@@ -585,7 +643,74 @@ $("#q").addEventListener("input", e => { clearTimeout(qTimer); const v = e.targe
 $("#sort").addEventListener("change", e => { S.sort = e.target.value; render(); });
 function setSensitive(on) { S.sensitive = on; pref("lib.sensitive", on ? "1" : "0"); nodes.clear(); render(); }
 $("#sens").addEventListener("click", () => setSensitive(!S.sensitive));
-$("#state").addEventListener("click", e => { if (e.target.id === "clear") { S.q = ""; S.type = "all"; $("#q").value = ""; render(); } });
+$("#state").addEventListener("click", e => {
+  if (e.target.id === "clear") { S.q = ""; S.type = "all"; $("#q").value = ""; render(); }
+  if (e.target.closest("[data-locate]")) openLocate();
+});
+
+/* ---------- library folder ---------- */
+function openLocate() {
+  const l = S.loc || {};
+  $("#locCur").textContent = l.found ? "In use: " + l.dir : "No library found. Looked in: " + (l.dir || l.default || "the default folder");
+  $("#locWarn").textContent = l.remembered_missing ? "The location you picked earlier was not found: " + l.remembered : "";
+  $("#locMsg").textContent = ""; $("#locPath").value = "";
+  $("#locDlg").showModal();
+}
+async function applyLocation(path) {
+  if (!String(path || "").trim()) { $("#locMsg").textContent = "Enter a folder path first."; return; }
+  $("#locMsg").textContent = "";
+  try {
+    await api("library_locate", {path});
+    $("#locDlg").close();
+    S.sig = "";  // force a fresh render with the new library
+    await load();
+    toast("Library loaded");
+  } catch (e) { $("#locMsg").textContent = e.message; }
+}
+$("#locBtn").addEventListener("click", openLocate);
+$("#locClose").addEventListener("click", () => $("#locDlg").close());
+$("#locUse").addEventListener("click", () => applyLocation($("#locPath").value));
+$("#locPath").addEventListener("keydown", e => { if (e.key === "Enter") applyLocation(e.target.value); });
+$("#locBrowse").addEventListener("click", async () => {
+  const b = $("#locBrowse"); b.disabled = true; $("#locMsg").textContent = "";
+  try { const r = await api("browse", {what: "library"}); if (r.path) await applyLocation(r.path); }
+  catch (e) { $("#locMsg").textContent = e.message; }
+  b.disabled = false;
+});
+
+/* ---------- find moved models ---------- */
+function openReloc() {
+  $("#rlMsg").textContent = ""; $("#rlMsg").classList.remove("ok"); $("#rlPath").value = "";
+  $("#relocDlg").showModal();
+}
+async function applyReloc(path) {
+  const msg = $("#rlMsg"), btns = [$("#rlBrowse"), $("#rlUse")];
+  msg.classList.remove("ok");
+  if (!String(path || "").trim()) { msg.textContent = "Enter a folder path first."; return; }
+  msg.textContent = "Searching... large folders can take a while.";
+  btns.forEach(b => b.disabled = true);
+  try {
+    const r = await api("library_relocate", {path});
+    S.sig = ""; await load();  // refresh the cards with the new locations
+    const parts = [`${r.fixed} ${r.fixed === 1 ? "model" : "models"} found and updated`];
+    if (r.ambiguous) parts.push(`${r.ambiguous} matched more than one folder and were skipped`);
+    if (r.still_missing) parts.push(`${r.still_missing} still not found`);
+    msg.textContent = parts.join(", ") + ".";
+    msg.classList.toggle("ok", r.fixed > 0);
+    if (r.fixed > 0 && !r.still_missing) { $("#relocDlg").close(); toast("Models found"); }
+  } catch (e) { msg.textContent = e.message; }
+  btns.forEach(b => b.disabled = false);
+}
+$("#relocOpen").addEventListener("click", openReloc);
+$("#rlClose").addEventListener("click", () => $("#relocDlg").close());
+$("#rlUse").addEventListener("click", () => applyReloc($("#rlPath").value));
+$("#rlPath").addEventListener("keydown", e => { if (e.key === "Enter") applyReloc(e.target.value); });
+$("#rlBrowse").addEventListener("click", async () => {
+  $("#rlBrowse").disabled = true; $("#rlMsg").textContent = "";
+  try { const r = await api("browse", {what: "models"}); if (r.path) { $("#rlBrowse").disabled = false; await applyReloc(r.path); return; } }
+  catch (e) { $("#rlMsg").textContent = e.message; }
+  $("#rlBrowse").disabled = false;
+});
 
 $("#scrim").addEventListener("click", e => {
   if (e.target.id === "scrim") return closeSheet();
@@ -623,9 +748,11 @@ document.addEventListener("keydown", e => {
 async function load(silent) {
   try {
     const r = await api("library");
-    const changed = JSON.stringify(r.models) !== JSON.stringify(S.models);
+    const sig = JSON.stringify(r), changed = sig !== S.sig;
+    S.sig = sig;
     if (changed) {
       S.models = r.models;
+      S.loc = r.location;
       S.map = new Map(r.models.map(m => [m.id, m]));
       const seen = {}; r.models.forEach(m => { const k = String(m.name || "").trim().toLowerCase(); seen[k] = (seen[k] || 0) + 1; });
       S.dups = new Set(Object.keys(seen).filter(k => seen[k] > 1));  // names used by more than one model

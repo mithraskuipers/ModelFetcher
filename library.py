@@ -1,6 +1,8 @@
 """Private library of downloaded models. Standard library only.
 
-Everything lives in the library/ folder next to this file. That folder is git-ignored
+Everything lives in one library folder. By default that is the library/ folder next to this
+file, but the folder can be somewhere else: the server remembers a chosen location in the
+settings file (see resolve() and use() below). The default folder is git-ignored
 (in the repo's .gitignore and by a .gitignore written inside the folder itself), so
 your links, model types and preview images are never committed.
 
@@ -18,12 +20,67 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-LIBRARY_DIR = Path(__file__).resolve().parent / "library"
+DEFAULT_DIR = Path(__file__).resolve().parent / "library"
+# The three below always describe the folder in use. use() changes them, so other modules
+# must read them as library.LIBRARY_DIR etc. (never copy them with "from library import ...").
+LIBRARY_DIR = DEFAULT_DIR
 LIBRARY_FILE = LIBRARY_DIR / "library.json"
 PREVIEWS_DIR = LIBRARY_DIR / "previews"
 SCHEMA = 1
 
 _lock = threading.Lock()
+
+
+def has_library(path):
+    """True if `path` is a folder that holds a library.json."""
+    try:
+        return (Path(path) / "library.json").is_file()
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def find_in(path):
+    """Turn what the user picked into a library folder, or None.
+
+    Accepts the library folder itself, the library.json file, or a folder that has a
+    'library' folder inside it.
+    """
+    try:
+        p = Path(os.path.expandvars(str(path or "").strip().strip('"'))).expanduser()
+        if not str(path or "").strip():
+            return None
+        if p.is_file() and p.name.lower() == "library.json":
+            p = p.parent
+        for cand in (p, p / "library"):
+            if has_library(cand):
+                return cand.resolve()
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def use(path):
+    """Switch to another library folder. Nothing is created or moved."""
+    global LIBRARY_DIR, LIBRARY_FILE, PREVIEWS_DIR
+    with _lock:
+        LIBRARY_DIR = Path(path)
+        LIBRARY_FILE = LIBRARY_DIR / "library.json"
+        PREVIEWS_DIR = LIBRARY_DIR / "previews"
+
+
+def resolve(remembered=None):
+    """Choose the library folder at startup.
+
+    The remembered folder (the one you picked last time) wins if it still holds a library,
+    otherwise the default folder is used. Returns True if a library was found. If none was,
+    the default folder is selected, so a first download simply starts a new library there.
+    """
+    for cand in (remembered, DEFAULT_DIR):
+        if cand and has_library(cand):
+            use(cand)
+            return True
+    use(DEFAULT_DIR)
+    return False
 
 # Civitai's own type names mapped to the short type keys used in the library.
 _CIVITAI_TYPES = {
@@ -137,3 +194,21 @@ def upsert(entry):
             entry["first_downloaded_at"] = now
             data["models"].append(entry)
         _save(data)
+
+
+def set_local_dirs(changes):
+    """Point entries at the folder their model files are in now. `changes` is {entry id: new folder}.
+
+    One save for all of them. Returns how many entries were updated.
+    """
+    ensure()
+    with _lock:
+        data = load()
+        n = 0
+        for m in data["models"]:
+            if m.get("id") in changes:
+                m["local_dir"] = str(changes[m["id"]])
+                n += 1
+        if n:
+            _save(data)
+    return n
